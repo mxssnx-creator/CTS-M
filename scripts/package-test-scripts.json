@@ -1,0 +1,8 @@
+{
+  "scripts": {
+    "test:system": "tsx scripts/test-system-end-to-end.ts",
+    "test:api": "tsx scripts/test-api-functionality.ts",
+    "test:exchanges": "tsx scripts/test-exchange-connectors.ts",
+    "test:all": "npm run test:system && npm run test:api && npm run test:exchanges"
+  }
+}
