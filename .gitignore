@@ -1,4 +1,4 @@
-node_modules
+node_modules/
 .next
 dev.log
 dev.pid
@@ -6,5 +6,3 @@ tsconfig.tsbuildinfo
 .env.local
 *.log
 .vercel
-node_modules/
-node_modules/
