@@ -12,6 +12,7 @@ import { SystemMonitoringPanel } from "./system-monitoring-panel"
 import { ProcessingProgressPanel } from "./processing-progress-panel"
 import { Card } from "@/components/ui/card"
 import { PageHeader } from "@/components/page-header"
+import { DeployButton } from "@/components/deploy-button"
 
 // Error Boundary Component
 interface ErrorBoundaryProps {
@@ -89,7 +90,9 @@ export function Dashboard() {
         title="CTS v3.2 Dashboard" 
         description="Monitor and control your Main Connections (Active Connections)"
         showExchangeSelector
-      />
+      >
+        <DeployButton label="Deploy" href="https://app.kilo.ai/claw" />
+      </PageHeader>
 
       {/* Smart Overview - Comprehensive system status */}
       <ErrorBoundary name="System Overview">
