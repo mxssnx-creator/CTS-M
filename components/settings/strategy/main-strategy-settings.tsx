@@ -5,6 +5,10 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Slider } from "@/components/ui/slider"
+
+const SELECTED_SET_COUNTS = [1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20, 30]
+const CONTINUING_COUNTS = [1, 2, 3, 4, 5, 6]
 
 export default function MainStrategySettings({
   settings,
@@ -19,96 +23,133 @@ export default function MainStrategySettings({
         <CardHeader>
           <CardTitle>Main Strategy Configuration</CardTitle>
           <CardDescription>
-            Configure main-level strategy parameters that build upon base positions for active trading
+            Configure main-level strategy evaluation with profitfactor, set selection, and continuing positions
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold border-b pb-2">Position Analysis Settings</h3>
-
-            <div className="grid md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Previous Positions Count</Label>
-                <Input
-                  type="number"
-                  min="1"
-                  max="20"
-                  value={settings.strategyMainPreviousCount || 5}
-                  onChange={(e) => handleSettingChange("strategyMainPreviousCount", Number.parseInt(e.target.value))}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Number of previous positions to analyze for strategy decisions (default: 5)
-                </p>
+            <h3 className="text-lg font-semibold border-b pb-2">Profitfactor Evaluation</h3>
+            <div className="space-y-2">
+              <Label>Min Profit Factor (0.1 - 3.0)</Label>
+              <Slider
+                min={0.1}
+                max={3.0}
+                step={0.1}
+                value={[settings.mainMinProfitFactor || 0.5]}
+                onValueChange={([value]) => handleSettingChange("mainMinProfitFactor", value)}
+              />
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>0.1</span>
+                <span className="font-medium text-primary">{settings.mainMinProfitFactor || 0.5}</span>
+                <span>3.0</span>
               </div>
-
-              <div className="space-y-2">
-                <Label>Last State Count</Label>
-                <Select
-                  value={settings.strategyMainLastStateCount || "last3"}
-                  onValueChange={(value) => handleSettingChange("strategyMainLastStateCount", value)}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="last1">Last 1</SelectItem>
-                    <SelectItem value="last2">Last 2</SelectItem>
-                    <SelectItem value="last3">Last 3</SelectItem>
-                    <SelectItem value="last5">Last 5</SelectItem>
-                    <SelectItem value="last10">Last 10</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">
-                  How many recent states to consider for strategy evaluation (default: last3)
-                </p>
-              </div>
+              <p className="text-xs text-muted-foreground">
+                Minimal profit factor ratio for main strategy evaluation (default: 0.5)
+              </p>
             </div>
           </div>
 
           <div className="border-t pt-6 space-y-4">
-            <h3 className="text-lg font-semibold border-b pb-2">Max Pseudo Positions (Per Configuration)</h3>
+            <h3 className="text-lg font-semibold border-b pb-2">Selected Sets Evaluation (Min PF: 0.6)</h3>
+            <div className="space-y-2">
+              <Label>Last Position Counts for Set Selection</Label>
+              <div className="flex flex-wrap gap-2">
+                {SELECTED_SET_COUNTS.map((count) => {
+                  const selected = (settings.mainSelectedSetCounts || SELECTED_SET_COUNTS).includes(count)
+                  return (
+                    <button
+                      key={count}
+                      type="button"
+                      onClick={() => {
+                        const current = settings.mainSelectedSetCounts || [...SELECTED_SET_COUNTS]
+                        const updated = selected ? current.filter((c: number) => c !== count) : [...current, count].sort((a, b) => a - b)
+                        handleSettingChange("mainSelectedSetCounts", updated)
+                      }}
+                      className={`px-3 py-1.5 text-sm rounded-md border transition-colors ${
+                        selected
+                          ? "bg-primary text-primary-foreground border-primary"
+                          : "bg-muted text-muted-foreground border-border hover:border-primary/50"
+                      }`}
+                    >
+                      {count}
+                    </button>
+                  )
+                })}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Evaluate from selected sets by last position count with min profitfactor 0.6
+              </p>
+            </div>
+          </div>
+
+          <div className="border-t pt-6 space-y-4">
+            <h3 className="text-lg font-semibold border-b pb-2">Continuing Positions (Tracked on Config Sets)</h3>
+            <div className="space-y-2">
+              <Label>Position Counts for Continuing Evaluation</Label>
+              <div className="flex flex-wrap gap-2">
+                {CONTINUING_COUNTS.map((count) => {
+                  const selected = (settings.mainContinuingPositionCounts || CONTINUING_COUNTS).includes(count)
+                  return (
+                    <button
+                      key={count}
+                      type="button"
+                      onClick={() => {
+                        const current = settings.mainContinuingPositionCounts || [...CONTINUING_COUNTS]
+                        const updated = selected ? current.filter((c: number) => c !== count) : [...current, count].sort((a, b) => a - b)
+                        handleSettingChange("mainContinuingPositionCounts", updated)
+                      }}
+                      className={`px-3 py-1.5 text-sm rounded-md border transition-colors ${
+                        selected
+                          ? "bg-primary text-primary-foreground border-primary"
+                          : "bg-muted text-muted-foreground border-border hover:border-primary/50"
+                      }`}
+                    >
+                      {count}
+                    </button>
+                  )
+                })}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Positions to be tracked (evaluated) on specified configuration sets
+              </p>
+            </div>
+          </div>
+
+          <div className="border-t pt-6 space-y-4">
+            <h3 className="text-lg font-semibold border-b pb-2">Max Pseudo Positions (Per Direction, 1-8)</h3>
 
             <div className="grid md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Max Pseudo Positions (Long)</Label>
+                <Label>Max Long</Label>
                 <Input
                   type="number"
                   min="1"
-                  max="10"
+                  max="8"
                   value={settings.strategyMainMaxPseudoPositionsLong || 1}
                   onChange={(e) =>
-                    handleSettingChange("strategyMainMaxPseudoPositionsLong", Number.parseInt(e.target.value))
+                    handleSettingChange("strategyMainMaxPseudoPositionsLong", Math.min(8, Math.max(1, Number.parseInt(e.target.value))))
                   }
                 />
                 <p className="text-xs text-muted-foreground">
-                  Maximum pseudo positions allowed for long entries per configuration set (default: 1)
+                  Max pseudo positions for long per configuration set (default: 1)
                 </p>
               </div>
 
               <div className="space-y-2">
-                <Label>Max Pseudo Positions (Short)</Label>
+                <Label>Max Short</Label>
                 <Input
                   type="number"
                   min="1"
-                  max="10"
+                  max="8"
                   value={settings.strategyMainMaxPseudoPositionsShort || 1}
                   onChange={(e) =>
-                    handleSettingChange("strategyMainMaxPseudoPositionsShort", Number.parseInt(e.target.value))
+                    handleSettingChange("strategyMainMaxPseudoPositionsShort", Math.min(8, Math.max(1, Number.parseInt(e.target.value))))
                   }
                 />
                 <p className="text-xs text-muted-foreground">
-                  Maximum pseudo positions allowed for short entries per configuration set (default: 1)
+                  Max pseudo positions for short per configuration set (default: 1)
                 </p>
               </div>
-            </div>
-
-            <div className="p-3 bg-blue-50 border border-blue-200 rounded text-xs text-blue-800">
-              <p className="font-semibold mb-1">About Max Pseudo Positions:</p>
-              <p>
-                Each configuration possibility set (base, main, real) can independently open up to the specified number of
-                pseudo positions in each direction. Setting both to 1 means each set can have at most 1 long and 1 short
-                position simultaneously, providing controlled risk management.
-              </p>
             </div>
           </div>
 
@@ -161,16 +202,13 @@ export default function MainStrategySettings({
             <h4 className="text-sm font-semibold">Main Strategy Overview</h4>
             <div className="space-y-2 text-xs text-muted-foreground">
               <p>
-                The Main Strategy builds upon Base positions to create actively managed trading positions. It analyzes
-                recent performance and market conditions to determine optimal entry and exit points.
+                Main Strategy evaluates pseudo positions from base sets by profitfactor. Selected sets are evaluated
+                by last position counts with min PF 0.6. Each configuration combination creates independent sets
+                with 250 DB length and 20% threshold rearrange for high-frequency performance.
               </p>
               <p>
-                Previous positions analysis helps identify successful patterns, while last state count determines how
-                much recent history influences decisions.
-              </p>
-              <p>
-                Ongoing trailing protects profits on active positions. Block and DCA adjustments provide additional
-                flexibility for different market conditions.
+                Continuing positions track evaluated positions on specified configuration sets. Block and DCA
+                adjustments are stacked with the base pseudo position configurations.
               </p>
             </div>
           </div>

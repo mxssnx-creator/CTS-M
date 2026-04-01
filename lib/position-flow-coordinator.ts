@@ -72,7 +72,7 @@ export class PositionFlowCoordinator {
       for (const posId of positionIds) {
         const mainPos = await getSettings(`pseudo_position:${posId}`)
         if (!mainPos || mainPos.symbol !== symbol || mainPos.status !== "active") continue
-        if ((mainPos.profit_factor || 0) < 0.6) continue
+        if ((mainPos.profit_factor || 0) < 0.7) continue
 
         // Check if real pseudo already exists
         const existingReal = await getSettings(`real_pseudo:${this.connectionId}:main:${posId}`)
@@ -89,9 +89,10 @@ export class PositionFlowCoordinator {
 
   /**
    * Check if Main Pseudo position qualifies for Real Pseudo
+   * Real evaluation: profitfactor >= 0.7 and drawdowntime <= 12h
    */
   private async isValidForRealPseudo(mainPosition: any): Promise<boolean> {
-    if ((mainPosition.profit_factor || 0) < 0.6) return false
+    if ((mainPosition.profit_factor || 0) < 0.7) return false
 
     const hoursOpen = mainPosition.created_at
       ? (Date.now() - new Date(mainPosition.created_at).getTime()) / (1000 * 60 * 60)
@@ -286,7 +287,7 @@ export class PositionFlowCoordinator {
       const avgDrawdownTime = this.calculateAverageDrawdownTime(recentPositions)
       const recentProfitFactor = this.calculateProfitFactorFromPositions(recentPositions)
 
-      if (recentProfitFactor < 0.6) return
+      if (recentProfitFactor < 0.7) return
       if (avgDrawdownTime > 12) return
 
       // Check if REAL PSEUDO already exists

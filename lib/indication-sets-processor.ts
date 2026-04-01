@@ -23,6 +23,10 @@ const DEFAULT_LIMITS = {
   active_advanced: 250,
 }
 
+// Default set DB length and threshold rearrange
+const DEFAULT_SET_DB_LENGTH = 250
+const DEFAULT_THRESHOLD_REARRANGE_PERCENT = 20 // rearrange at 200 when max is 250
+
 // Pre-cached client reference
 let cachedClient: any = null
 async function getCachedClient() {
@@ -33,14 +37,17 @@ async function getCachedClient() {
   return cachedClient
 }
 
-// Position limits per config per direction
+// Position limits per config per direction (1-8, default 1)
 const DEFAULT_POSITION_LIMITS = {
   maxLong: 1,
   maxShort: 1,
 }
 
-// Indication timeout after valid evaluation (100ms - 3000ms)
+// Indication timeout after valid evaluation (0-5 seconds, default 1, step 0.2)
 const DEFAULT_INDICATION_TIMEOUT_MS = 1000
+
+// Pseudo position timeout (0-5 seconds, default 1, step 0.2)
+const DEFAULT_PSEUDO_POSITION_TIMEOUT_MS = 1000
 
 export interface IndicationSetLimits {
   direction: number
@@ -88,10 +95,17 @@ export class IndicationSetsProcessor {
   private limits: IndicationSetLimits = { ...DEFAULT_LIMITS }
   private positionLimits: PositionLimits = { ...DEFAULT_POSITION_LIMITS }
   private indicationTimeoutMs: number = DEFAULT_INDICATION_TIMEOUT_MS
+  private pseudoPositionTimeoutMs: number = DEFAULT_PSEUDO_POSITION_TIMEOUT_MS
+  private setDbLength: number = DEFAULT_SET_DB_LENGTH
+  private thresholdRearrangePercent: number = DEFAULT_THRESHOLD_REARRANGE_PERCENT
   private directionMoveRanges: number[] = Array.from({ length: 28 }, (_, i) => i + 3) // 3..30
   private optimalRanges: number[] = Array.from({ length: 28 }, (_, i) => i + 3) // 3..30
-  private drawdownRatios: number[] = [0.5, 1.0, 1.5]
-  private lastPartRatios: number[] = [0.25, 0.5]
+  private drawdownRatios: number[] = [0.1, 0.2, 0.3, 0.4, 0.5] // 0.1-0.5 step 0.1
+  private marketActivityRatios: number[] = Array.from({ length: 10 }, (_, i) => 0.01 + i * 0.01) // 0.01-0.1 step 0.01
+  private activityLastPartRatios: number[] = [0.1, 0.2, 0.3, 0.4] // 0.1-0.4 step 0.1
+  private activityRatios: number[] = Array.from({ length: 11 }, (_, i) => 0.7 + i * 0.1) // 0.7-1.7 step 0.1
+  private marketDistanceRatios: number[] = Array.from({ length: 11 }, (_, i) => 0.7 + i * 0.1) // 0.7-1.7 step 0.1
+  private lastPartRatios: number[] = [0.25, 0.5] // legacy, kept for backward compat
   private factorMultipliers: number[] = [0.9, 1.0, 1.1]
   private activeThresholds: number[] = [0.5, 1.0, 1.5, 2.0, 2.5]
   private activeTimeRatios: number[] = [0.5, 1.0]
@@ -111,29 +125,78 @@ export class IndicationSetsProcessor {
         if (settings.databaseSizeActive) this.limits.active = Number(settings.databaseSizeActive)
         if (settings.databaseSizeOptimal) this.limits.optimal = Number(settings.databaseSizeOptimal)
         
-        // Load position limits per direction
-        if (settings.maxPositionsLong) this.positionLimits.maxLong = Number(settings.maxPositionsLong)
-        if (settings.maxPositionsShort) this.positionLimits.maxShort = Number(settings.maxPositionsShort)
+        // Load position limits per direction (1-8)
+        if (settings.maxPositionsLong) this.positionLimits.maxLong = Math.min(8, Math.max(1, Number(settings.maxPositionsLong)))
+        if (settings.maxPositionsShort) this.positionLimits.maxShort = Math.min(8, Math.max(1, Number(settings.maxPositionsShort)))
         
-        // Load indication timeout
-        if (settings.indicationTimeoutMs) {
-          this.indicationTimeoutMs = Math.max(100, Math.min(3000, Number(settings.indicationTimeoutMs)))
+        // Load indication timeout (0-5 seconds, default 1, step 0.2)
+        if (settings.indicationTimeoutSeconds) {
+          this.indicationTimeoutMs = Math.max(0, Math.min(5000, Number(settings.indicationTimeoutSeconds) * 1000))
         }
 
-        // Config-grid controls (optional)
+        // Load pseudo position timeout (0-5 seconds, default 1, step 0.2)
+        if (settings.pseudoPositionTimeoutSeconds) {
+          this.pseudoPositionTimeoutMs = Math.max(0, Math.min(5000, Number(settings.pseudoPositionTimeoutSeconds) * 1000))
+        }
+
+        // Load set DB length and threshold rearrange
+        if (settings.setDbLength) this.setDbLength = Math.max(50, Number(settings.setDbLength))
+        if (settings.setThresholdRearrangePercent) this.thresholdRearrangePercent = Math.max(5, Math.min(50, Number(settings.setThresholdRearrangePercent)))
+
+        // Config-grid controls for steps
         this.directionMoveRanges = this.parseRangeSettings(
-          settings.directionRangeStart,
-          settings.directionRangeEnd,
-          settings.directionRangeStep,
+          settings.indicationStepsMin ?? settings.directionRangeStart,
+          settings.indicationStepsMax ?? settings.directionRangeEnd,
+          settings.indicationStepsStep ?? settings.directionRangeStep,
           this.directionMoveRanges,
         )
         this.optimalRanges = this.parseRangeSettings(
-          settings.optimalRangeStart,
-          settings.optimalRangeEnd,
-          settings.optimalRangeStep,
+          settings.indicationStepsMin ?? settings.optimalRangeStart,
+          settings.indicationStepsMax ?? settings.optimalRangeEnd,
+          settings.indicationStepsStep ?? settings.optimalRangeStep,
           this.optimalRanges,
         )
-        this.drawdownRatios = this.parseNumericList(settings.indicationDrawdownRatios, this.drawdownRatios)
+
+        // Drawdown ratios 0.1-0.5 step 0.1
+        this.drawdownRatios = this.parseRangeSettings(
+          settings.indicationDrawdownMin,
+          settings.indicationDrawdownMax,
+          settings.indicationDrawdownStep,
+          this.drawdownRatios,
+        )
+
+        // Market activity ratios 0.01-0.1 step 0.01
+        this.marketActivityRatios = this.parseRangeSettings(
+          settings.indicationMarketActivityMin,
+          settings.indicationMarketActivityMax,
+          settings.indicationMarketActivityStep,
+          this.marketActivityRatios,
+        )
+
+        // Activity last part ratios 0.1-0.4 step 0.1
+        this.activityLastPartRatios = this.parseRangeSettings(
+          settings.indicationActivityLastPartMin,
+          settings.indicationActivityLastPartMax,
+          settings.indicationActivityLastPartStep,
+          this.activityLastPartRatios,
+        )
+
+        // Activity ratios 0.7-1.7 step 0.1
+        this.activityRatios = this.parseRangeSettings(
+          settings.indicationActivityRatioMin,
+          settings.indicationActivityRatioMax,
+          settings.indicationActivityRatioStep,
+          this.activityRatios,
+        )
+
+        // Market distance ratios 0.7-1.7 step 0.1
+        this.marketDistanceRatios = this.parseRangeSettings(
+          settings.indicationMarketDistanceMin,
+          settings.indicationMarketDistanceMax,
+          settings.indicationMarketDistanceStep,
+          this.marketDistanceRatios,
+        )
+
         this.lastPartRatios = this.parseNumericList(settings.indicationLastPartRatios, this.lastPartRatios)
         this.factorMultipliers = this.parseNumericList(settings.indicationFactorMultipliers, this.factorMultipliers)
         this.activeThresholds = this.parseNumericList(settings.activeThresholds, this.activeThresholds)
@@ -162,6 +225,11 @@ export class IndicationSetsProcessor {
   /** Get the limit for a specific indication type */
   getLimit(type: keyof IndicationSetLimits): number {
     return this.limits[type] || DEFAULT_LIMITS[type] || 250
+  }
+
+  /** Get the threshold for rearrangement (20% less than max length) */
+  getThresholdRearrange(): number {
+    return Math.floor(this.setDbLength * (1 - this.thresholdRearrangePercent / 100))
   }
 
   private parseRangeSettings(startRaw: any, endRaw: any, stepRaw: any, fallback: number[]): number[] {
@@ -367,39 +435,40 @@ export class IndicationSetsProcessor {
 
   /**
    * Process Active Indication Set (thresholds 0.5-2.5%)
+   * Active uses only: steps, drawdown, activity ratios, activity last part ratios
    */
   private async processActiveSet(symbol: string, marketData: any): Promise<any> {
     const thresholds = this.activeThresholds
     const drawdownRatios = this.drawdownRatios
-    const activeTimeRatios = this.activeTimeRatios
-    const lastPartRatios = this.lastPartRatios
-    const factorMultipliers = this.factorMultipliers
+    const marketActivityRatios = this.marketActivityRatios
+    const activityLastPartRatios = this.activityLastPartRatios
+    const activityRatios = this.activityRatios
     let qualified = 0
     let total = 0
     const pendingWrites: Array<{ setKey: string; indication: any; config: any }> = []
 
     for (const threshold of thresholds) {
       for (const drawdownRatio of drawdownRatios) {
-        for (const activeTimeRatio of activeTimeRatios) {
-          for (const lastPartRatio of lastPartRatios) {
-            for (const factorMultiplier of factorMultipliers) {
+        for (const marketActivityRatio of marketActivityRatios) {
+          for (const activityLastPartRatio of activityLastPartRatios) {
+            for (const activityRatio of activityRatios) {
               try {
                 const indication = this.calculateActiveIndication(marketData, {
                   threshold,
                   drawdownRatio,
-                  activeTimeRatio,
-                  lastPartRatio,
-                  factorMultiplier,
+                  marketActivityRatio,
+                  activityLastPartRatio,
+                  activityRatio,
                 })
                 if (indication) {
                   total++
                   if (indication.profitFactor >= 1.0) {
                     qualified++
-                    const setKey = `indication_set:${this.connectionId}:${symbol}:active:t${threshold}:dd${drawdownRatio}:ar${activeTimeRatio}:lp${lastPartRatio}:f${factorMultiplier}`
+                    const setKey = `indication_set:${this.connectionId}:${symbol}:active:t${threshold}:dd${drawdownRatio}:ma${marketActivityRatio}:alp${activityLastPartRatio}:ar${activityRatio}`
                     pendingWrites.push({
                       setKey,
                       indication,
-                      config: { threshold, drawdownRatio, activeTimeRatio, lastPartRatio, factorMultiplier },
+                      config: { threshold, drawdownRatio, marketActivityRatio, activityLastPartRatio, activityRatio },
                     })
                   }
                 }
@@ -421,25 +490,43 @@ export class IndicationSetsProcessor {
 
   /**
    * Process Optimal Indication Set (consecutive step detection)
-   * OPTIMIZED: Process key ranges only, batch writes
+   * Optimal uses ALL parameters: steps, drawdown, market activity, activity last part, activity ratio, market distance
    */
   private async processOptimalSet(symbol: string, marketData: any): Promise<any> {
     const keyRanges = this.optimalRanges
-    const factorMultipliers = this.factorMultipliers
+    const drawdownRatios = this.drawdownRatios
+    const marketActivityRatios = this.marketActivityRatios
+    const activityLastPartRatios = this.activityLastPartRatios
+    const activityRatios = this.activityRatios
+    const marketDistanceRatios = this.marketDistanceRatios
     let qualified = 0
     let total = 0
     const pendingWrites: Array<{ setKey: string; indication: any; config: any }> = []
 
     for (const range of keyRanges) {
-      for (const factorMultiplier of factorMultipliers) {
-        const indication = this.calculateOptimalIndication(marketData, range, factorMultiplier)
-        if (!indication) continue
-        
-        total++
-        if (indication.profitFactor >= 1.0) {
-          qualified++
-          const setKey = `indication_set:${this.connectionId}:${symbol}:optimal:range${range}:factor${factorMultiplier}`
-          pendingWrites.push({ setKey, indication, config: { range, factorMultiplier } })
+      for (const drawdownRatio of drawdownRatios) {
+        for (const marketActivityRatio of marketActivityRatios) {
+          for (const activityLastPartRatio of activityLastPartRatios) {
+            for (const activityRatio of activityRatios) {
+              for (const marketDistanceRatio of marketDistanceRatios) {
+                const indication = this.calculateOptimalIndication(marketData, range, {
+                  drawdownRatio,
+                  marketActivityRatio,
+                  activityLastPartRatio,
+                  activityRatio,
+                  marketDistanceRatio,
+                })
+                if (!indication) continue
+                
+                total++
+                if (indication.profitFactor >= 1.0) {
+                  qualified++
+                  const setKey = `indication_set:${this.connectionId}:${symbol}:optimal:r${range}:dd${drawdownRatio}:ma${marketActivityRatio}:alp${activityLastPartRatio}:ar${activityRatio}:mdr${marketDistanceRatio}`
+                  pendingWrites.push({ setKey, indication, config: { range, drawdownRatio, marketActivityRatio, activityLastPartRatio, activityRatio, marketDistanceRatio } })
+                }
+              }
+            }
+          }
         }
       }
     }
@@ -453,6 +540,7 @@ export class IndicationSetsProcessor {
 
   /**
    * Batch save multiple indications - much more efficient than individual saves
+   * Uses threshold rearrangement: rearrange at 20% less than max length for performance
    */
   private async batchSaveIndications(
     writes: Array<{ setKey: string; indication: any; config: any }>,
@@ -468,6 +556,8 @@ export class IndicationSetsProcessor {
       // Process writes in bounded parallel chunks for high-frequency throughput.
       const concurrency = 20
       const limit = this.getLimit(type as keyof IndicationSetLimits)
+      const thresholdRearrange = this.getThresholdRearrange()
+      
       for (let i = 0; i < writes.length; i += concurrency) {
         const chunk = writes.slice(i, i + concurrency)
         await Promise.all(
@@ -484,7 +574,17 @@ export class IndicationSetsProcessor {
             const existing = await client.get(setKey)
             let entries = existing ? JSON.parse(existing) : []
             entries.unshift(entry)
-            if (entries.length > limit) entries = entries.slice(0, limit)
+            
+            // Threshold rearrangement: if exceeds threshold, trim to threshold then continue
+            // This prevents full rebuild at max length
+            if (entries.length > thresholdRearrange && entries.length <= limit) {
+              // Keep best performing entries by profitFactor
+              entries.sort((a: any, b: any) => (b.profitFactor || 0) - (a.profitFactor || 0))
+              entries = entries.slice(0, thresholdRearrange)
+            } else if (entries.length > limit) {
+              entries = entries.slice(0, limit)
+            }
+            
             await client.set(setKey, JSON.stringify(entries))
           }),
         )
@@ -599,12 +699,12 @@ export class IndicationSetsProcessor {
     config: {
       threshold: number
       drawdownRatio: number
-      activeTimeRatio: number
-      lastPartRatio: number
-      factorMultiplier: number
+      marketActivityRatio: number
+      activityLastPartRatio: number
+      activityRatio: number
     },
   ): any {
-    const { threshold, drawdownRatio, activeTimeRatio, lastPartRatio, factorMultiplier } = config
+    const { threshold, drawdownRatio, marketActivityRatio, activityLastPartRatio, activityRatio } = config
     const prices = this.getPriceHistory(marketData, 10)
     if (!prices || prices.length < 2) return null
 
@@ -613,20 +713,21 @@ export class IndicationSetsProcessor {
     if (priceChange >= threshold) {
       const normalizedChange = priceChange / Math.max(threshold, 0.1)
       const estimatedDrawdown = Math.max(0.1, normalizedChange / Math.max(drawdownRatio, 0.1))
-      const activeTimeScore = normalizedChange * activeTimeRatio
-      const tailWeight = 1 + lastPartRatio
+      const activityScore = normalizedChange * marketActivityRatio
+      const lastPartWeight = 1 + activityLastPartRatio
+      const distanceWeight = activityRatio
       return {
-        profitFactor: 1.0 + ((priceChange / 100) * factorMultiplier * tailWeight) - (estimatedDrawdown * 0.01),
+        profitFactor: 1.0 + ((priceChange / 100) * distanceWeight * lastPartWeight) - (estimatedDrawdown * 0.01),
         confidence: Math.min(1.0, priceChange / threshold / 2),
         metadata: {
           priceChange,
           threshold,
           drawdownRatio,
-          activeTimeRatio,
-          lastPartRatio,
-          factorMultiplier,
+          marketActivityRatio,
+          activityLastPartRatio,
+          activityRatio,
           estimatedDrawdown,
-          activeTimeScore,
+          activityScore,
         },
       }
     }
@@ -634,7 +735,18 @@ export class IndicationSetsProcessor {
     return null
   }
 
-  private calculateOptimalIndication(marketData: any, range: number, factorMultiplier: number): any {
+  private calculateOptimalIndication(
+    marketData: any,
+    range: number,
+    config: {
+      drawdownRatio: number
+      marketActivityRatio: number
+      activityLastPartRatio: number
+      activityRatio: number
+      marketDistanceRatio: number
+    },
+  ): any {
+    const { drawdownRatio, marketActivityRatio, activityLastPartRatio, activityRatio, marketDistanceRatio } = config
     const prices = this.getPriceHistory(marketData, range * 3)
     if (!prices || prices.length < range * 3) return null
 
@@ -643,10 +755,14 @@ export class IndicationSetsProcessor {
 
     if (steps >= 2) {
       const volatility = this.calculateVolatility(prices)
+      const drawdownPenalty = steps / Math.max(drawdownRatio * 10, 1)
+      const activityWeight = 1 + marketActivityRatio
+      const lastPartWeight = 1 + activityLastPartRatio
+      const distanceWeight = activityRatio * marketDistanceRatio
       return {
-        profitFactor: 1.0 + (steps * 0.5 + volatility) * factorMultiplier,
+        profitFactor: 1.0 + (steps * 0.5 + volatility) * distanceWeight * activityWeight * lastPartWeight - drawdownPenalty,
         confidence: Math.min(1.0, steps / 3),
-        metadata: { consecutiveSteps: steps, volatility, range, factorMultiplier },
+        metadata: { consecutiveSteps: steps, volatility, range, drawdownRatio, marketActivityRatio, activityLastPartRatio, activityRatio, marketDistanceRatio },
       }
     }
 

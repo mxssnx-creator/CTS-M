@@ -22,6 +22,16 @@ export interface StrategyResult {
     total_trades: number
     win_rate: number
   }
+  // Main strategy evaluation
+  selectedSetEvaluation?: {
+    lastPosCount: number
+    profitFactor: number
+    passed: boolean
+  }
+  continuingPositions?: {
+    count: number
+    tracked: boolean
+  }
 }
 
 export interface StrategyType {
@@ -103,6 +113,37 @@ export class StrategyEngine {
     config: StrategyConfig,
     applyAdjustments = true,
   ): StrategyResult {
+    // Selected sets evaluation by last position counts
+    const selectedSetCounts = [1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20, 30]
+    const minProfitFactor = config.min_profit_factor || 0.5
+    
+    // Evaluate from selected sets by last pos count
+    let bestEvaluation = { lastPosCount: 1, profitFactor: 0, passed: false }
+    for (const count of selectedSetCounts) {
+      const lastN = pseudoPositions.slice(-count)
+      if (lastN.length < count) continue
+      const pf = this.calculateAverageProfitFactor(lastN)
+      if (pf >= 0.6 && pf > bestEvaluation.profitFactor) {
+        bestEvaluation = { lastPosCount: count, profitFactor: pf, passed: true }
+      }
+    }
+
+    // Continuing positions tracking (1-6)
+    const continuingCounts = [1, 2, 3, 4, 5, 6]
+    let continuingTracked = false
+    let continuingCount = 0
+    for (const count of continuingCounts) {
+      const lastN = pseudoPositions.slice(-count)
+      if (lastN.length >= count) {
+        const pf = this.calculateAverageProfitFactor(lastN)
+        if (pf >= minProfitFactor) {
+          continuingTracked = true
+          continuingCount = count
+          break
+        }
+      }
+    }
+
     const mainPositions = pseudoPositions.slice(-config.main_positions_count)
 
     const positivePositions = mainPositions.filter((p) => p.profit_factor > 0)
@@ -112,7 +153,7 @@ export class StrategyEngine {
     const negativeAvg = negativePositions.length > 0 ? this.calculateAverageProfitFactor(negativePositions) : 0
 
     const overallAvg = this.calculateAverageProfitFactor(mainPositions)
-    const isValid = overallAvg > 0
+    const isValid = overallAvg >= minProfitFactor
 
     let adjustedVolumeFactor = config.volume_factor
     const appliedAdjustments: AdjustmentType[] = []
@@ -151,6 +192,8 @@ export class StrategyEngine {
       should_open_position: isValid,
       volume_factor: adjustedVolumeFactor,
       stats: this.calculateStrategyStats(pseudoPositions, config),
+      selectedSetEvaluation: bestEvaluation,
+      continuingPositions: { count: continuingCount, tracked: continuingTracked },
     }
   }
 
@@ -163,13 +206,15 @@ export class StrategyEngine {
     const lastPositions = pseudoPositions.slice(-config.last_positions_count)
     const avgProfitFactor = this.calculateAverageProfitFactor(lastPositions)
 
+    // Real evaluation: profitfactor >= 0.7 and drawdowntime <= 12h
     const last15 = pseudoPositions.slice(-15)
     const last25 = pseudoPositions.slice(-25)
 
     const avg15 = this.calculateAverageProfitFactor(last15)
     const avg25 = this.calculateAverageProfitFactor(last25)
 
-    const isValid = (avg15 > 0.4 || avg25 > 0.4) && avgProfitFactor >= 0.4
+    const drawdownHours = this.calculateDrawdownHours(pseudoPositions)
+    const isValid = (avg15 > 0.4 || avg25 > 0.4) && avgProfitFactor >= 0.7 && drawdownHours <= 12
 
     let adjustedVolumeFactor = config.volume_factor
     const appliedAdjustments: AdjustmentType[] = []
@@ -471,33 +516,39 @@ export class StrategyEngine {
   private generateBaseConfigurations(): StrategyConfig[] {
     const configs: StrategyConfig[] = []
 
-    for (let tp = 2; tp <= 22; tp++) {
-      for (let sl = 0.2; sl <= 2.2; sl += 0.1) {
+    // TP 2-20 step 1
+    for (let tp = 2; tp <= 20; tp++) {
+      // SL 0.1-2.5 step 0.1
+      for (let sl = 0.1; sl <= 2.5; sl += 0.1) {
+        const slRounded = Math.round(sl * 10) / 10
         configs.push({
           takeprofit_factor: tp,
-          stoploss_ratio: sl,
+          stoploss_ratio: slRounded,
           trailing_enabled: false,
           last_positions_count: 8,
           main_positions_count: 3,
           volume_factor: 1,
         })
-        ;[0.3, 0.6, 1.0].forEach((trailStart) => {
-          ;[0.1, 0.2, 0.3].forEach((trailStop) => {
+        // Trailing: start 0.2-1 step 0.2, stop 0.1-0.5 step 0.1
+        for (let trailStart = 0.2; trailStart <= 1.0; trailStart += 0.2) {
+          for (let trailStop = 0.1; trailStop <= 0.5; trailStop += 0.1) {
+            const trailStep = Math.round((slRounded / 3) * 100) / 100 // trail_step = stop value / 3
             configs.push({
               takeprofit_factor: tp,
-              stoploss_ratio: sl,
+              stoploss_ratio: slRounded,
               trailing_enabled: true,
               trail_start: trailStart,
-              trail_stop: trailStop,
+              trail_step: trailStep,
+              trail_stop: Math.round(trailStop * 10) / 10,
               last_positions_count: 8,
               main_positions_count: 3,
               volume_factor: 1,
             })
-          })
-        })
+          }
+        }
       }
     }
 
-    return configs.slice(0, 50)
+    return configs.slice(0, 150)
   }
 }

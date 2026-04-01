@@ -164,7 +164,11 @@ export interface TradingPosition extends RealPosition {
 export interface IndicationConfig {
   type: "direction" | "move" | "active" | "optimal" | "auto" // Renamed active_advanced to auto
   range: number // 3-30 step 1 (for direction and move), 1-10 step 1 (for active)
-  drawdown_ratio?: number // 0.1, 0.2, 0.3, 0.4, 0.5 step 0.1 (5 variations)
+  drawdown_ratio?: number // 0.1-0.5 step 0.1 (5 variations)
+  market_activity_ratio?: number // 0.01-0.1 step 0.01 (market move direction per second avg ratios of position-cost)
+  activity_last_part_ratio?: number // 0.1-0.4 step 0.1 (last part range ratios, 1=100%)
+  activity_ratio?: number // 0.7-1.7 step 0.1 (ratios related to average values)
+  market_distance_ratio?: number // 0.7-1.7 step 0.1 (market distance from active direction average)
   price_change_ratio?: number // 0.1-1.0 for direction/move
 
   // Active range: 1-10 where ratio = 0.1 + (range - 1) × 0.1556
@@ -173,7 +177,6 @@ export interface IndicationConfig {
   activity_for_calculated?: number // % activity for calculated positions: 10-90% step 10% = 9 variations
   activity_last_part?: number // % activity for last part: 10-90% step 10% = 9 variations
 
-  activity_ratio?: number // 0.5%, 1.0%, 1.5%, 2.0%, 2.5%, 3.0%
   time_window?: number // 1, 3, 5, 10, 15, 20, 30, 40 minutes
 
   auto_activity_ratio?: number // 0.5-3.0%
@@ -202,14 +205,16 @@ export type AdjustmentStrategyType = AdjustStrategyType | AdditionalStrategyType
 export type AdjustmentType = AdjustmentStrategyType
 
 export interface StrategyConfig {
-  takeprofit_factor: number // 2-22
-  stoploss_ratio: number // 0.2-2.2
+  takeprofit_factor: number // 2-20 (from settings)
+  stoploss_ratio: number // 0.1-2.5 (from settings)
   trailing_enabled: boolean
-  trail_start?: number // 0.3, 0.6, 1.0
-  trail_stop?: number // 0.1, 0.2, 0.3
-  last_positions_count: number // 3,4,5,6,8,12,25
-  main_positions_count: number // 1,2,3,4,5 (was partial_positions_count)
+  trail_start?: number // 0.2-1.0 step 0.2 (ratio from takeprofit)
+  trail_step?: number // stop value / 3 (auto-calculated)
+  trail_stop?: number // 0.1-0.5 step 0.1 (ratio from highest positive value)
+  last_positions_count: number // 1,2,3,4,5,6,8,10,12,15,20,30
+  main_positions_count: number // 1,2,3,4,5,6 (continuing positions)
   volume_factor: number // 1-5
+  min_profit_factor?: number // 0.1-3.0 step 0.1 (main evaluation)
   adjustments?: {
     block?: {
       enabled: boolean
@@ -356,6 +361,107 @@ export interface SystemSettings {
   indicationPositionStepRatioMin: number // Minimum ratio (default: 0.2)
   indicationPositionStepRatioMax: number // Maximum ratio (default: 1.0)
   // If indication step is 10, position step range is: 10 * 0.2 = 2 (min) to 10 * 1.0 = 10 (max)
+
+  // Indication step counts based on position-cost (default 0.1%)
+  indicationStepsMin?: number // 3 (default)
+  indicationStepsMax?: number // 30 (default)
+  indicationStepsStep?: number // 1 (default)
+
+  // Drawdown ratios from calc market move ratios
+  indicationDrawdownMin?: number // 0.1 (default)
+  indicationDrawdownMax?: number // 0.5 (default)
+  indicationDrawdownStep?: number // 0.1 (default)
+
+  // Market activity for actual market move direction per second avg ratios (of position-cost)
+  indicationMarketActivityMin?: number // 0.01 (default)
+  indicationMarketActivityMax?: number // 0.1 (default)
+  indicationMarketActivityStep?: number // 0.01 (default)
+
+  // Last part range ratios (1 is 100%)
+  indicationActivityLastPartMin?: number // 0.1 (default)
+  indicationActivityLastPartMax?: number // 0.4 (default)
+  indicationActivityLastPartStep?: number // 0.1 (default)
+
+  // Activity ratios related to average values
+  indicationActivityRatioMin?: number // 0.7 (default)
+  indicationActivityRatioMax?: number // 1.7 (default)
+  indicationActivityRatioStep?: number // 0.1 (default)
+
+  // Market distance ratios from active direction average
+  indicationMarketDistanceMin?: number // 0.7 (default)
+  indicationMarketDistanceMax?: number // 1.7 (default)
+  indicationMarketDistanceStep?: number // 0.1 (default)
+
+  // Indication timeout for Evaluated state (seconds)
+  indicationTimeoutMin?: number // 0 (default)
+  indicationTimeoutMax?: number // 5 (default)
+  indicationTimeoutDefault?: number // 1 (default)
+  indicationTimeoutStep?: number // 0.2 (default)
+
+  // Max positions per direction long/short
+  maxPositionsPerDirectionMin?: number // 1 (default)
+  maxPositionsPerDirectionMax?: number // 8 (default)
+  maxPositionsPerDirectionDefault?: number // 1 (default)
+  maxPositionsPerDirectionStep?: number // 1 (default)
+
+  // Pseudo position timeout (seconds)
+  pseudoPositionTimeoutMin?: number // 0 (default)
+  pseudoPositionTimeoutMax?: number // 5 (default)
+  pseudoPositionTimeoutDefault?: number // 1 (default)
+  pseudoPositionTimeoutStep?: number // 0.2 (default)
+
+  // Strategy pseudo position takeprofit steps
+  strategyTpStepsMin?: number // 2 (default)
+  strategyTpStepsMax?: number // 20 (default)
+  strategyTpStepsStep?: number // 1 (default)
+
+  // Strategy pseudo position stoploss ratios
+  strategySlRatiosMin?: number // 0.1 (default)
+  strategySlRatiosMax?: number // 2.5 (default)
+  strategySlRatiosStep?: number // 0.1 (default)
+
+  // Strategy trailing start (ratio from takeprofit)
+  strategyTrailingStartMin?: number // 0.2 (default)
+  strategyTrailingStartMax?: number // 1.0 (default)
+  strategyTrailingStartStep?: number // 0.2 (default)
+
+  // Strategy trailing stop (ratio from highest positive value)
+  strategyTrailingStopMin?: number // 0.1 (default)
+  strategyTrailingStopMax?: number // 0.5 (default)
+  strategyTrailingStopStep?: number // 0.1 (default)
+
+  // Main strategy profitfactor minimal ratio
+  mainMinProfitFactorMin?: number // 0.1 (default)
+  mainMinProfitFactorMax?: number // 3.0 (default)
+  mainMinProfitFactorDefault?: number // 0.5 (default)
+  mainMinProfitFactorStep?: number // 0.1 (default)
+
+  // Main strategy selected sets evaluation last position counts
+  mainSelectedSetCounts?: number[] // [1,2,3,4,5,6,8,10,12,15,20,30] (default)
+  mainSelectedSetMinProfitFactor?: number // 0.6 (default)
+
+  // Main strategy continuing positions
+  mainContinuingPositionCounts?: number[] // [1,2,3,4,5,6] (default)
+
+  // Real strategy profitfactor minimal ratio
+  realMinProfitFactor?: number // 0.7 (default)
+
+  // Real strategy max drawdown time (hours)
+  realMaxDrawdownHours?: number // 12 (default)
+
+  // Sets DB length per independent set
+  setDbLength?: number // 250 (default)
+
+  // Sets threshold rearrange percent (20% less than max length)
+  setThresholdRearrangePercent?: number // 20 (default, meaning rearrange at 200 when max is 250)
+
+  // Indication types ratios relation (0.2 and 1.0)
+  indicationTypeRatioMin?: number // 0.2 (default)
+  indicationTypeRatioMax?: number // 1.0 (default)
+
+  // Strategy count ratios relation (0.2 and 1.0)
+  strategyCountRatioMin?: number // 0.2 (default)
+  strategyCountRatioMax?: number // 1.0 (default)
 }
 
 export interface MarketData {

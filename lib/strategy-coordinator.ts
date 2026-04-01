@@ -46,19 +46,19 @@ export class StrategyCoordinator {
   private readonly METRICS: Record<string, EvaluationMetrics> = {
     base: {
       maxDrawdownTime: 999999, // No limit - create all
-      minProfitFactor: 1.0, // Minimum threshold only
+      minProfitFactor: 0.5, // Minimal ratio from settings
       confidence: 0.3,
       description: "All qualifying pseudo positions"
     },
     main: {
       maxDrawdownTime: 1440, // 24 hours
-      minProfitFactor: 1.2,
+      minProfitFactor: 0.5, // Main min profit factor from settings (slider 0.1-3.0, default 0.5)
       confidence: 0.5,
-      description: "Position-state specific strategies"
+      description: "Position-state specific strategies with selected set evaluation"
     },
     real: {
-      maxDrawdownTime: 240, // 4 hours
-      minProfitFactor: 1.5,
+      maxDrawdownTime: 720, // 12 hours (configurable via realMaxDrawdownHours)
+      minProfitFactor: 0.7, // Real min profit factor from settings
       confidence: 0.65,
       description: "Exchange-mirrored high-confidence strategies"
     },
