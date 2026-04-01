@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { initRedis, getRedisClient } from "@/lib/redis-db"
+import { SystemLogger } from "@/lib/system-logger"
 
 export async function GET(request: NextRequest) {
   try {
@@ -11,60 +12,23 @@ export async function GET(request: NextRequest) {
     await initRedis()
     const client = getRedisClient()
 
-    // Determine which log set to query
-    let logIds: string[] = []
+    // Use SystemLogger's getLogs method which handles both list and set formats
+    let logs: any[] = []
     if (category && category !== "all") {
-      // Get logs from specific category
-      logIds = await client.smembers(`logs:${category}`)
+      logs = await SystemLogger.getLogs(category, limit)
     } else {
-      // Get all logs
-      logIds = await client.smembers("logs:all")
+      logs = await SystemLogger.getLogs(undefined, limit)
     }
 
-    // Fetch all log entries from Redis
-    const logs: any[] = []
-    for (const logId of logIds) {
-      try {
-        const logData = await client.hgetall(logId)
-        if (logData && Object.keys(logData).length > 0) {
-          // Parse metadata if it's a JSON string
-          if (logData.metadata && typeof logData.metadata === "string") {
-            try {
-              logData.metadata = JSON.parse(logData.metadata)
-            } catch {
-              // Keep as string if not valid JSON
-            }
-          }
-          
-          // Filter by level if specified
-          if (!level || level === "all" || logData.level === level) {
-            logs.push({
-              id: logData.id,
-              timestamp: logData.timestamp,
-              level: logData.level,
-              category: logData.category,
-              message: logData.message,
-              metadata: logData.metadata,
-            })
-          }
-        }
-      } catch (error) {
-        console.error(`[v0] Error fetching log ${logId}:`, error)
-      }
+    // Filter by level if specified
+    if (level && level !== "all") {
+      logs = logs.filter((log) => log.level === level)
     }
-
-    // Sort by timestamp descending and limit
-    logs.sort((a, b) => {
-      const timeA = new Date(a.timestamp).getTime()
-      const timeB = new Date(b.timestamp).getTime()
-      return timeB - timeA
-    })
-    const limitedLogs = logs.slice(0, limit)
 
     // Calculate stats
     const stats = {
       total: logs.length,
-      displayed: limitedLogs.length,
+      displayed: logs.length,
       byLevel: logs.reduce((acc: any, log: any) => {
         acc[log.level] = (acc[log.level] || 0) + 1
         return acc
@@ -75,9 +39,7 @@ export async function GET(request: NextRequest) {
       }, {}),
     }
 
-    console.log(`[v0] [API/Logs] Retrieved ${limitedLogs.length}/${logs.length} logs from Redis`)
-
-    return NextResponse.json({ logs: limitedLogs, stats })
+    return NextResponse.json({ logs, stats })
   } catch (error) {
     console.error("[v0] Error fetching logs:", error)
     return NextResponse.json(

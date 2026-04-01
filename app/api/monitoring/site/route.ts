@@ -3,7 +3,7 @@ import { initRedis, getRedisClient } from "@/lib/redis-db"
 
 export const dynamic = "force-dynamic"
 
-const SITE_LOGS_KEY = "site_logs"
+const SITE_LOGS_KEY = "site_logs:all"
 const MAX_LOGS = 1000
 
 export async function GET(request: Request) {
@@ -16,7 +16,23 @@ export async function GET(request: Request) {
     const category = url.searchParams.get("category")
     const limit = Number.parseInt(url.searchParams.get("limit") || "100")
 
-    const rawLogs = await client.lrange(SITE_LOGS_KEY, 0, MAX_LOGS - 1)
+    // Try list format first (new format)
+    let rawLogs: string[] = []
+    try {
+      rawLogs = await client.lrange(SITE_LOGS_KEY, 0, MAX_LOGS - 1)
+    } catch {
+      rawLogs = []
+    }
+
+    // If list is empty, try legacy format
+    if (rawLogs.length === 0) {
+      try {
+        rawLogs = await client.smembers("site_logs")
+      } catch {
+        rawLogs = []
+      }
+    }
+
     let logs = rawLogs.map((entry: any) => {
       try { return typeof entry === "string" ? JSON.parse(entry) : entry } catch { return entry }
     })

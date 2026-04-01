@@ -6,6 +6,7 @@
  */
 
 import { getCorrelationId } from './correlation-tracking'
+import { getRedisClient, initRedis } from './redis-db'
 
 export enum LogLevel {
   DEBUG = 0,
@@ -91,13 +92,13 @@ export class StructuredLogger {
   /**
    * Log message at specified level
    */
-  private log(
+  private async log(
     level: LogLevel,
     message: string,
     context?: Record<string, any>,
     error?: Error,
     metrics?: StructuredLog['metrics']
-  ): void {
+  ): Promise<void> {
     if (level < this.minLevel) return
 
     const log: StructuredLog = {
@@ -126,6 +127,9 @@ export class StructuredLogger {
       this.logBuffer = this.logBuffer.slice(-this.maxBufferSize)
     }
 
+    // Persist to Redis
+    await this.persistToRedis(log)
+
     // Output to console
     if (this.enableConsole) {
       this.outputConsole(log)
@@ -138,50 +142,81 @@ export class StructuredLogger {
   }
 
   /**
+   * Persist log to Redis for durability
+   */
+  private async persistToRedis(log: StructuredLog): Promise<void> {
+    try {
+      await initRedis()
+      const client = getRedisClient()
+      const logKey = `structured_log:${log.timestamp}:${Math.random().toString(36).slice(2, 9)}`
+      
+      await client.set(logKey, JSON.stringify(log))
+      await client.expire(logKey, 604800) // 7 day TTL
+
+      // Add to category-specific list
+      const categoryKey = `structured_logs:${log.category}`
+      await client.lpush(categoryKey, logKey)
+      await client.ltrim(categoryKey, 0, 4999) // Keep max 5000 per category
+      await client.expire(categoryKey, 604800)
+
+      // Add to all logs list
+      const allKey = 'structured_logs:all'
+      await client.lpush(allKey, logKey)
+      await client.ltrim(allKey, 0, 9999) // Keep max 10000 total
+      await client.expire(allKey, 604800)
+    } catch (redisError) {
+      // Don't fail logging if Redis is down
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('[StructuredLogger] Redis persistence failed:', redisError)
+      }
+    }
+  }
+
+  /**
    * Debug level log
    */
-  debug(message: string, context?: Record<string, any>): void {
-    this.log(LogLevel.DEBUG, message, context)
+  async debug(message: string, context?: Record<string, any>): Promise<void> {
+    await this.log(LogLevel.DEBUG, message, context)
   }
 
   /**
    * Info level log
    */
-  info(message: string, context?: Record<string, any>): void {
-    this.log(LogLevel.INFO, message, context)
+  async info(message: string, context?: Record<string, any>): Promise<void> {
+    await this.log(LogLevel.INFO, message, context)
   }
 
   /**
    * Warning level log
    */
-  warn(message: string, context?: Record<string, any>, error?: Error): void {
-    this.log(LogLevel.WARN, message, context, error)
+  async warn(message: string, context?: Record<string, any>, error?: Error): Promise<void> {
+    await this.log(LogLevel.WARN, message, context, error)
   }
 
   /**
    * Error level log
    */
-  error(message: string, error?: Error, context?: Record<string, any>): void {
-    this.log(LogLevel.ERROR, message, context, error)
+  async error(message: string, error?: Error, context?: Record<string, any>): Promise<void> {
+    await this.log(LogLevel.ERROR, message, context, error)
   }
 
   /**
    * Critical level log
    */
-  critical(message: string, error?: Error, context?: Record<string, any>): void {
-    this.log(LogLevel.CRITICAL, message, context, error)
+  async critical(message: string, error?: Error, context?: Record<string, any>): Promise<void> {
+    await this.log(LogLevel.CRITICAL, message, context, error)
   }
 
   /**
    * Log with metrics
    */
-  logWithMetrics(
+  async logWithMetrics(
     level: LogLevel,
     message: string,
     metrics: StructuredLog['metrics'],
     context?: Record<string, any>
-  ): void {
-    this.log(level, message, context, undefined, metrics)
+  ): Promise<void> {
+    await this.log(level, message, context, undefined, metrics)
   }
 
   /**
@@ -284,6 +319,89 @@ export class StructuredLogger {
    */
   clear(): void {
     this.logBuffer = []
+  }
+
+  /**
+   * Get persisted logs from Redis
+   */
+  async getRedisLogs(options: {
+    category?: LogCategory
+    limit?: number
+    since?: Date
+    level?: LogLevel
+  } = {}): Promise<StructuredLog[]> {
+    try {
+      await initRedis()
+      const client = getRedisClient()
+      const { category, limit = 100, since, level } = options
+
+      const listKey = category ? `structured_logs:${category}` : 'structured_logs:all'
+      const logKeys = await client.lrange(listKey, 0, limit - 1)
+
+      const logs: StructuredLog[] = []
+      for (const key of logKeys) {
+        const data = await client.get(key)
+        if (data) {
+          try {
+            const log = JSON.parse(data) as StructuredLog
+            if (since && new Date(log.timestamp) < since) continue
+            if (level !== undefined && log.level < level) continue
+            logs.push(log)
+          } catch {
+            // Skip malformed logs
+          }
+        }
+      }
+
+      return logs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+    } catch (error) {
+      console.error('[StructuredLogger] Failed to retrieve logs from Redis:', error)
+      return []
+    }
+  }
+
+  /**
+   * Get log statistics from Redis
+   */
+  async getRedisStats(): Promise<{
+    total: number
+    byCategory: Record<string, number>
+    byLevel: Record<string, number>
+    recentErrors: number
+  }> {
+    try {
+      await initRedis()
+      const client = getRedisClient()
+      const allKeys = await client.lrange('structured_logs:all', 0, -1)
+
+      const stats = {
+        total: allKeys.length,
+        byCategory: {} as Record<string, number>,
+        byLevel: {} as Record<string, number>,
+        recentErrors: 0,
+      }
+
+      // Sample last 100 logs for stats
+      const sample = await client.lrange('structured_logs:all', 0, 99)
+      for (const key of sample) {
+        const data = await client.get(key)
+        if (data) {
+          try {
+            const log = JSON.parse(data) as StructuredLog
+            stats.byCategory[log.category] = (stats.byCategory[log.category] || 0) + 1
+            stats.byLevel[LogLevel[log.level]] = (stats.byLevel[LogLevel[log.level]] || 0) + 1
+            if (log.level >= LogLevel.ERROR) stats.recentErrors++
+          } catch {
+            // Skip malformed
+          }
+        }
+      }
+
+      return stats
+    } catch (error) {
+      console.error('[StructuredLogger] Failed to get stats from Redis:', error)
+      return { total: 0, byCategory: {}, byLevel: {}, recentErrors: 0 }
+    }
   }
 
   /**
