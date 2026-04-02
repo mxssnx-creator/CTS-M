@@ -3,12 +3,12 @@
  * Automatically starts trade engines for enabled connections via their toggles
  * 
  * Keeps engine lifecycle synchronized with current main-enabled connections.
- * Engines are still user-controlled via dashboard toggles; monitor only ensures
+ * Engines are user-controlled via dashboard toggles; monitor ensures
  * enabled connections are actually running when global coordinator is running.
  */
 
 import { getGlobalTradeEngineCoordinator } from "./trade-engine"
-import { getAllConnections, getRedisClient, initRedis } from "./redis-db"
+import { getAllConnections, getRedisClient, initRedis, setSettings } from "./redis-db"
 import { loadSettingsAsync } from "./settings-storage"
 import { hasConnectionCredentials, isConnectionMainProcessing } from "./connection-state-utils"
 
@@ -21,6 +21,7 @@ export function isAutoStartInitialized(): boolean {
 
 /**
  * Initialize trade engine monitor for auto-recovery/synchronization.
+ * NOW: Actually starts engines for valid connections instead of just monitoring.
  */
 export async function initializeTradeEngineAutoStart(): Promise<void> {
   if (autoStartInitialized) {
@@ -33,23 +34,59 @@ export async function initializeTradeEngineAutoStart(): Promise<void> {
   }
 
   try {
-    console.log("[v0] [Auto-Start] Starting trade engine auto-initialization (sync mode)...")
-    const coordinator = getGlobalTradeEngineCoordinator()
-    
-    // Check if Global Trade Engine Coordinator is running
+    console.log("[v0] [Auto-Start] Starting trade engine auto-initialization...")
     await initRedis()
     const client = getRedisClient()
-    const globalState = await client.hgetall("trade_engine:global")
-    const globalRunning = globalState?.status === "running"
     
-    if (!globalRunning) {
-      console.log("[v0] [Auto-Start] Global Trade Engine is not running - monitor initialized, waiting for global start.")
-      autoStartInitialized = true
-      startConnectionMonitoring()
-      return
+    // Start engines for all connections with valid credentials
+    const connections = await getAllConnections()
+    if (Array.isArray(connections)) {
+      const coordinator = getGlobalTradeEngineCoordinator()
+      
+      // Set global engine state to running
+      await client.hset("trade_engine:global", {
+        status: "running",
+        started_at: new Date().toISOString(),
+        auto_start: "true",
+      })
+      
+      let startedCount = 0
+      for (const conn of connections) {
+        const hasValidCredentials = hasConnectionCredentials(conn, 20, false)
+        const isMainProcessing = isConnectionMainProcessing(conn)
+        
+        if (!hasValidCredentials) continue
+        
+        // Enable connection for processing if not already
+        if (!isMainProcessing) {
+          await client.hset(`connection:${conn.id}`, {
+            is_active_inserted: "1",
+            is_enabled_dashboard: "1",
+            is_active: "1",
+            updated_at: new Date().toISOString(),
+          })
+        }
+        
+        try {
+          await coordinator.startEngine(conn.id, {
+            connectionId: conn.id,
+            connection_name: conn.name,
+            exchange: conn.exchange,
+            indicationInterval: 1,
+            strategyInterval: 1,
+            realtimeInterval: 1,
+          })
+          startedCount++
+          console.log(`[v0] [Auto-Start] ✓ Engine started for ${conn.id}`)
+        } catch (e) {
+          console.error(`[v0] [Auto-Start] Failed to start engine for ${conn.id}:`, e)
+        }
+      }
+      
+      console.log(`[v0] [Auto-Start] Started ${startedCount} engine(s) for connections with valid credentials`)
     }
     
-    console.log("[v0] [Auto-Start] Monitoring initialized - enabled connections will be synchronized")
+    console.log("[v0] [Auto-Start] Auto-initialization complete")
     autoStartInitialized = true
     startConnectionMonitoring()
   } catch (error) {

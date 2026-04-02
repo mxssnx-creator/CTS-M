@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server"
 import { ensureDefaultExchangesExist } from "@/lib/default-exchanges-seeder"
-import { initRedis, getAllConnections } from "@/lib/redis-db"
+import { initRedis, getAllConnections, getRedisClient, setSettings } from "@/lib/redis-db"
+import { completeStartup } from "@/lib/startup-coordinator"
+import { initializeTradeEngineAutoStart, isAutoStartInitialized } from "@/lib/trade-engine-auto-start"
+
+let serverStartupComplete = false
 
 function toBoolean(value: unknown): boolean {
   return value === true || value === "1" || value === "true"
@@ -10,8 +14,19 @@ export async function GET() {
   console.log("[v0] /api/init: System initialization starting...")
 
   try {
+    if (!serverStartupComplete) {
+      console.log("[v0] /api/init: Running complete startup sequence...")
+      await completeStartup()
+      serverStartupComplete = true
+      console.log("[v0] /api/init: Startup sequence complete")
+    }
+
+    if (!isAutoStartInitialized()) {
+      console.log("[v0] /api/init: Initializing auto-start...")
+      await initializeTradeEngineAutoStart()
+    }
+
     await initRedis()
-    console.log("[v0] /api/init: Redis initialized")
 
     const seedResult = await ensureDefaultExchangesExist()
     if (!seedResult.success) {
@@ -21,6 +36,9 @@ export async function GET() {
     const allConnections = await getAllConnections()
     const enabledConnections = allConnections?.filter((c) => toBoolean(c.is_enabled)) || []
     const predefinedConnections = allConnections?.filter((c) => toBoolean(c.is_predefined)) || []
+
+    const client = getRedisClient()
+    const globalState = await client.hgetall("trade_engine:global")
 
     console.log("[v0] /api/init: Found", allConnections?.length || 0, "connections,", enabledConnections.length, "enabled,", predefinedConnections.length, "predefined")
 
@@ -34,6 +52,8 @@ export async function GET() {
         predefined: predefinedConnections.length,
       },
       defaultExchangesSeeded: seedResult.success,
+      globalEngineStatus: globalState?.status || "unknown",
+      autoStartInitialized: isAutoStartInitialized(),
     })
   } catch (error) {
     console.error("[v0] /api/init: Failed:", error)

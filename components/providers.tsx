@@ -4,6 +4,7 @@ import type React from "react"
 import { ThemeProvider } from "@/components/theme-provider"
 import { AuthProvider } from "@/lib/auth-context"
 import { StyleInitializer } from "@/components/style-initializer"
+import { SystemInitializer } from "@/components/system-initializer"
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
@@ -14,6 +15,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
       disableTransitionOnChange
     >
       <StyleInitializer />
+      <SystemInitializer />
       <AuthProvider>
         {children}
       </AuthProvider>
