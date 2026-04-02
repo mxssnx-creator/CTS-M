@@ -1,62 +1,74 @@
 import { NextResponse } from "next/server"
-import { initRedis, getAllConnections, getRedisClient } from "@/lib/redis-db"
+import { initRedis, getRedisClient } from "@/lib/redis-db"
+import { SystemLogger } from "@/lib/system-logger"
 
 export async function GET() {
+  const startTime = Date.now()
   try {
+    console.log("[v0] [API] [Strategies] Fetching strategies evaluation stats")
+    
     await initRedis()
     const client = getRedisClient()
 
-    // Get strategies from Redis keys: strategies:{connectionId}:{symbol}
     const strategyKeys = await client.keys("strategies:*")
+    console.log(`[v0] [API] [Strategies] Found ${strategyKeys.length} strategy keys`)
     
     const strategyStats = {
-      base: { count: 0, winRate: 0, drawdown: 0, drawdownHours: 0, profitFactor250: 0, profitFactor50: 0, strategies: [] as any[] },
-      main: { count: 0, winRate: 0, drawdown: 0, drawdownHours: 0, profitFactor250: 0, profitFactor50: 0, strategies: [] as any[] },
-      real: { count: 0, winRate: 0, drawdown: 0, drawdownHours: 0, profitFactor250: 0, profitFactor50: 0, strategies: [] as any[] },
-      live: { count: 0, winRate: 0, drawdown: 0, drawdownHours: 0, profitFactor250: 0, profitFactor50: 0, strategies: [] as any[] },
+      base: { count: 0, winRate: 0, drawdown: 0, drawdownHours: 0, profitFactor250: 0, profitFactor50: 0 },
+      main: { count: 0, winRate: 0, drawdown: 0, drawdownHours: 0, profitFactor250: 0, profitFactor50: 0 },
+      real: { count: 0, winRate: 0, drawdown: 0, drawdownHours: 0, profitFactor250: 0, profitFactor50: 0 },
+      live: { count: 0, winRate: 0, drawdown: 0, drawdownHours: 0, profitFactor250: 0, profitFactor50: 0 },
     }
 
-    // Fetch all strategies
+    const strategyDataByType: Record<string, any[]> = {
+      base: [], main: [], real: [], live: []
+    }
+
     for (const key of strategyKeys) {
-      const strategy = await client.get(key)
-      if (!strategy) continue
+      try {
+        const strategy = await client.get(key)
+        if (!strategy) continue
 
-      const data = JSON.parse(strategy)
-      const mainType = data.mainType as "base" | "main" | "real" | "live"
+        const data = JSON.parse(strategy)
+        const mainType = data.mainType as "base" | "main" | "real" | "live"
 
-      if (strategyStats[mainType]) {
-        strategyStats[mainType].strategies.push(data)
-        strategyStats[mainType].count++
+        if (strategyDataByType[mainType]) {
+          strategyDataByType[mainType].push(data)
+          strategyStats[mainType].count++
+        }
+      } catch (parseError) {
+        console.warn(`[v0] [API] [Strategies] Failed to parse strategy key ${key}:`, parseError)
       }
     }
 
-    // Calculate aggregates for each strategy type
     Object.keys(strategyStats).forEach((type) => {
-      const stats = strategyStats[type as "base" | "main" | "real" | "live"]
-      if (stats.strategies.length > 0) {
-        const avgWinRate = stats.strategies.reduce((sum: number, s: any) => sum + (s.stats?.win_rate || 0), 0) / stats.strategies.length
-        const avgDrawdown = stats.strategies.reduce((sum: number, s: any) => sum + (s.stats?.drawdown_percentage || 0), 0) / stats.strategies.length
-        const avgDrawdownHours = stats.strategies.reduce((sum: number, s: any) => sum + (s.stats?.drawdown_hours || 0), 0) / stats.strategies.length
-        const avgPF250 = stats.strategies.reduce((sum: number, s: any) => sum + (s.avg_profit_factor || 1), 0) / stats.strategies.length
+      const key = type as "base" | "main" | "real" | "live"
+      const strategies = strategyDataByType[key]
+      if (strategies.length > 0) {
+        const avgWinRate = strategies.reduce((sum, s) => sum + (s.stats?.win_rate || 0), 0) / strategies.length
+        const avgDrawdown = strategies.reduce((sum, s) => sum + (s.stats?.drawdown_percentage || 0), 0) / strategies.length
+        const avgDrawdownHours = strategies.reduce((sum, s) => sum + (s.stats?.drawdown_hours || 0), 0) / strategies.length
+        const avgPF250 = strategies.reduce((sum, s) => sum + (s.avg_profit_factor || 1), 0) / strategies.length
         
-        stats.winRate = avgWinRate
-        stats.drawdown = avgDrawdown
-        stats.drawdownHours = avgDrawdownHours
-        stats.profitFactor250 = avgPF250
-        // For profitFactor50, use a slightly higher default as it's more recent data
-        stats.profitFactor50 = avgPF250 * 1.1
+        strategyStats[key].winRate = avgWinRate
+        strategyStats[key].drawdown = avgDrawdown
+        strategyStats[key].drawdownHours = avgDrawdownHours
+        strategyStats[key].profitFactor250 = avgPF250
+        strategyStats[key].profitFactor50 = avgPF250 * 1.1
       }
-      
-      // Remove the strategies array from response
-      delete (stats as any).strategies
     })
+
+    const duration = Date.now() - startTime
+    console.log(`[v0] [API] [Strategies] Fetched in ${duration}ms - base: ${strategyStats.base.count}, main: ${strategyStats.main.count}, real: ${strategyStats.real.count}, live: ${strategyStats.live.count}`)
 
     return NextResponse.json({
       success: true,
       strategies: strategyStats,
     })
   } catch (error) {
-    console.error("[v0] Failed to fetch strategies stats:", error)
+    const duration = Date.now() - startTime
+    console.error(`[v0] [API] [Strategies] Failed to fetch strategies stats (${duration}ms):`, error)
+    await SystemLogger.logError(error, "api", "GET /api/main/strategies-evaluation")
     return NextResponse.json({
       success: false,
       error: "Failed to fetch strategies stats",

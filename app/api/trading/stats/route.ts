@@ -4,40 +4,38 @@ import { SystemLogger } from "@/lib/system-logger"
 import { query } from "@/lib/db"
 
 export async function GET() {
+  const startTime = Date.now()
   try {
-    console.log("[v0] Fetching detailed trading statistics")
+    console.log("[v0] [API] [Trading Stats] Fetching detailed trading statistics")
     
     const connections = loadConnections()
     const enabledConnections = connections.filter((c) => c.is_enabled && c.is_live_trade)
+    console.log(`[v0] [API] [Trading Stats] Enabled connections: ${enabledConnections.length}`)
     
-    // Return comprehensive stats with last250, last50, and last32h
     try {
-      // Get last 250 positions
-      const last250 = await query(
+      const last250Result = await query(
         `SELECT 
           COUNT(*) as total,
           SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as wins,
           SUM(CASE WHEN pnl < 0 THEN 1 ELSE 0 END) as losses,
-          COALESCE(SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) / COUNT(*), 0) as winRate,
+          COALESCE(CAST(SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) AS FLOAT) / NULLIF(COUNT(*), 0), 0) as winRate,
           COALESCE(SUM(CASE WHEN pnl > 0 THEN pnl ELSE 0 END) / NULLIF(SUM(CASE WHEN pnl < 0 THEN ABS(pnl) ELSE 0 END), 0), 0) as profitFactor,
           COALESCE(SUM(pnl), 0) as totalProfit
-         FROM pseudo_positions ORDER BY created_at DESC LIMIT 250`
+         FROM (SELECT * FROM pseudo_positions ORDER BY created_at DESC LIMIT 250)`
       )
       
-      // Get last 50 positions
-      const last50 = await query(
+      const last50Result = await query(
         `SELECT 
           COUNT(*) as total,
           SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as wins,
           SUM(CASE WHEN pnl < 0 THEN 1 ELSE 0 END) as losses,
-          COALESCE(SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) / COUNT(*), 0) as winRate,
+          COALESCE(CAST(SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) AS FLOAT) / NULLIF(COUNT(*), 0), 0) as winRate,
           COALESCE(SUM(CASE WHEN pnl > 0 THEN pnl ELSE 0 END) / NULLIF(SUM(CASE WHEN pnl < 0 THEN ABS(pnl) ELSE 0 END), 0), 0) as profitFactor,
           COALESCE(SUM(pnl), 0) as totalProfit
-         FROM pseudo_positions ORDER BY created_at DESC LIMIT 50`
+         FROM (SELECT * FROM pseudo_positions ORDER BY created_at DESC LIMIT 50)`
       )
       
-      // Get last 32 hours
-      const last32h = await query(
+      const last32hResult = await query(
         `SELECT 
           COUNT(*) as total,
           COALESCE(SUM(pnl), 0) as totalProfit,
@@ -45,37 +43,38 @@ export async function GET() {
          FROM pseudo_positions WHERE created_at >= datetime('now', '-32 hours')`
       )
       
-      const l250 = (last250 as any[])[0]
-      const l50 = (last50 as any[])[0]
-      const l32 = (last32h as any[])[0]
+      const l250 = (last250Result as any[])[0] || {}
+      const l50 = (last50Result as any[])[0] || {}
+      const l32 = (last32hResult as any[])[0] || {}
       
-      console.log(`[v0] Trading stats - Last250: ${l250?.total || 0}, Last50: ${l50?.total || 0}, Last32h: ${l32?.total || 0}`)
+      const duration = Date.now() - startTime
+      console.log(`[v0] [API] [Trading Stats] Stats fetched in ${duration}ms - Last250: ${l250?.total || 0}, Last50: ${l50?.total || 0}, Last32h: ${l32?.total || 0}`)
       
       return NextResponse.json({
         last250: {
-          total: l250?.total || 0,
-          wins: l250?.wins || 0,
-          losses: l250?.losses || 0,
-          winRate: l250?.winRate || 0,
-          profitFactor: l250?.profitFactor || 0,
-          totalProfit: l250?.totalProfit || 0,
+          total: Number(l250?.total) || 0,
+          wins: Number(l250?.wins) || 0,
+          losses: Number(l250?.losses) || 0,
+          winRate: Number(l250?.winRate) || 0,
+          profitFactor: Number(l250?.profitFactor) || 0,
+          totalProfit: Number(l250?.totalProfit) || 0,
         },
         last50: {
-          total: l50?.total || 0,
-          wins: l50?.wins || 0,
-          losses: l50?.losses || 0,
-          winRate: l50?.winRate || 0,
-          profitFactor: l50?.profitFactor || 0,
-          totalProfit: l50?.totalProfit || 0,
+          total: Number(l50?.total) || 0,
+          wins: Number(l50?.wins) || 0,
+          losses: Number(l50?.losses) || 0,
+          winRate: Number(l50?.winRate) || 0,
+          profitFactor: Number(l50?.profitFactor) || 0,
+          totalProfit: Number(l50?.totalProfit) || 0,
         },
         last32h: {
-          total: l32?.total || 0,
-          totalProfit: l32?.totalProfit || 0,
-          profitFactor: l32?.profitFactor || 0,
+          total: Number(l32?.total) || 0,
+          totalProfit: Number(l32?.totalProfit) || 0,
+          profitFactor: Number(l32?.profitFactor) || 0,
         },
       })
     } catch (dbError) {
-      console.warn("[v0] Database stats not available:", dbError)
+      console.warn("[v0] [API] [Trading Stats] Database stats not available:", dbError)
       return NextResponse.json({
         last250: { total: 0, wins: 0, losses: 0, winRate: 0, profitFactor: 0, totalProfit: 0 },
         last50: { total: 0, wins: 0, losses: 0, winRate: 0, profitFactor: 0, totalProfit: 0 },
@@ -83,7 +82,8 @@ export async function GET() {
       })
     }
   } catch (error) {
-    console.error("[v0] Failed to fetch stats:", error)
+    const duration = Date.now() - startTime
+    console.error(`[v0] [API] [Trading Stats] Failed to fetch stats (${duration}ms):`, error)
     await SystemLogger.logError(error, "api", "GET /api/trading/stats")
     return NextResponse.json({ error: "Failed to fetch stats" }, { status: 500 })
   }
