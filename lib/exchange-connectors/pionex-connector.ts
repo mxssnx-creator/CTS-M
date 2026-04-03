@@ -508,14 +508,14 @@ export class PionexConnector extends BaseExchangeConnector {
     }
   }
 
-  async getOHLCV(symbol: string, timeframe = "1m", limit = 250): Promise<Array<{timestamp: number; open: number; high: number; low: number; close: number; volume: number}> | null> {
+  async getOHLCV(symbol: string, timeframe = "1m", limit = 250, startTime?: number, endTime?: number): Promise<Array<{timestamp: number; open: number; high: number; low: number; close: number; volume: number}> | null> {
     try {
-      this.log(`Fetching OHLCV for ${symbol} (${timeframe}, ${limit} candles)`)
+      this.log(`Fetching OHLCV for ${symbol} (${timeframe}, ${limit} candles${startTime ? ` from ${new Date(startTime).toISOString()}` : ""}${endTime ? ` to ${new Date(endTime).toISOString()}` : ""})`)
 
       const baseUrl = this.getBaseUrl()
       const timestamp = Date.now().toString()
       const method = "GET"
-      
+
       // Convert timeframe to Pionex interval format
       const intervalMap: Record<string, string> = {
         "1m": "1m", "5m": "5m", "15m": "15m", "30m": "30m",
@@ -523,8 +523,11 @@ export class PionexConnector extends BaseExchangeConnector {
         "1d": "1d", "1w": "1w", "1M": "1M"
       }
       const interval = intervalMap[timeframe] || "1m"
-      
-      const path = `/api/v1/market/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`
+
+      let path = `/api/v1/market/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`
+      if (startTime) path += `&startTime=${startTime}`
+      if (endTime) path += `&endTime=${endTime}`
+
       const params: Record<string, string> = { timestamp }
       const signature = this.generateSignature(method, path, params)
 

@@ -139,6 +139,7 @@ export function interpolateCandlesTo1s(candles1m: MarketDataCandle[]): MarketDat
 
 /**
  * Fetch large amounts of historical OHLCV data with pagination
+ * Tries all available exchange connections in order of preference
  */
 async function fetchHistoricalMarketData(
   symbol: string,
@@ -153,65 +154,98 @@ async function fetchHistoricalMarketData(
       const hasValidCredentials = hasCredentials &&
         (c.api_key || c.apiKey || "").length > 5 &&
         (c.api_secret || c.apiSecret || "").length > 5
-      return hasValidCredentials && c.exchange === "bingx" // Only BingX for now
+      return hasValidCredentials && c.is_enabled_dashboard === "1" // Only enabled connections
     })
 
     if (validConnections.length === 0) {
-      console.log(`[v0] [MarketData] No valid BingX connections for historical data fetch`)
+      console.log(`[v0] [MarketData] No valid exchange connections for historical data fetch`)
       return null
     }
 
-    const conn = validConnections[0] // Use first BingX connection
-    const { createExchangeConnector } = await import("@/lib/exchange-connectors")
-    const connector = await createExchangeConnector(
-      conn.exchange,
-      {
-        apiKey: conn.api_key || conn.apiKey || "",
-        apiSecret: conn.api_secret || conn.apiSecret || "",
-        apiType: (conn.api_type || "perpetual_futures") as "spot" | "perpetual_futures" | "unified",
-        isTestnet: conn.is_testnet === "1" || conn.is_testnet === true,
-      }
-    )
+    // Try exchanges in order of preference: BingX, Binance, Bybit, OKX, Pionex, OrangeX
+    const exchangePriority = ["bingx", "binance", "bybit", "okx", "pionex", "orangex"]
+    const prioritizedConnections = validConnections.sort((a, b) => {
+      const aIndex = exchangePriority.indexOf(a.exchange.toLowerCase())
+      const bIndex = exchangePriority.indexOf(b.exchange.toLowerCase())
+      return (aIndex === -1 ? 999 : aIndex) - (bIndex === -1 ? 999 : bIndex)
+    })
 
-    console.log(`[v0] [MarketData] Fetching ${daysBack} days of ${timeframe} data for ${symbol} from ${conn.exchange}`)
+    console.log(`[v0] [MarketData] Trying ${prioritizedConnections.length} exchanges for ${symbol} historical data: ${prioritizedConnections.map(c => c.exchange).join(", ")}`)
 
-    const endTime = Date.now()
-    const startTime = endTime - (daysBack * 24 * 60 * 60 * 1000)
-    const allCandles: MarketDataCandle[] = []
+    for (const conn of prioritizedConnections) {
+      try {
+        console.log(`[v0] [MarketData] Attempting to fetch ${daysBack} days of ${timeframe} data for ${symbol} from ${conn.exchange}`)
 
-    // Fetch data in chunks to avoid API limits
-    const chunkSize = 1000 // BingX max limit per request
-    let currentStartTime = startTime
+        const { createExchangeConnector } = await import("@/lib/exchange-connectors")
+        const connector = await createExchangeConnector(
+          conn.exchange,
+          {
+            apiKey: conn.api_key || conn.apiKey || "",
+            apiSecret: conn.api_secret || conn.apiSecret || "",
+            apiPassphrase: conn.api_passphrase || conn.apiPassphrase || "",
+            apiType: (conn.api_type || "perpetual_futures") as "spot" | "perpetual_futures" | "unified",
+            isTestnet: conn.is_testnet === "1" || conn.is_testnet === true,
+          }
+        )
 
-    while (currentStartTime < endTime) {
-      const chunkEndTime = Math.min(currentStartTime + (chunkSize * getTimeframeMs(timeframe)), endTime)
+        const endTime = Date.now()
+        const startTime = endTime - (daysBack * 24 * 60 * 60 * 1000)
+        const allCandles: MarketDataCandle[] = []
 
-      const candles = await connector.getOHLCV(symbol, timeframe, chunkSize, currentStartTime, chunkEndTime)
-
-      if (candles && candles.length > 0) {
-        allCandles.push(...candles)
-        console.log(`[v0] [MarketData] Fetched ${candles.length} candles (${new Date(currentStartTime).toISOString()} to ${new Date(chunkEndTime).toISOString()})`)
-
-        // Move to next chunk
-        if (candles.length < chunkSize) {
-          // No more data available
-          break
+        // Determine chunk size based on exchange
+        const chunkSizes: Record<string, number> = {
+          "bingx": 1000,
+          "binance": 1000,
+          "bybit": 1000,
+          "okx": 300,
+          "pionex": 1000,
+          "orangex": 1000,
         }
-        currentStartTime = candles[candles.length - 1].timestamp + getTimeframeMs(timeframe)
-      } else {
-        console.log(`[v0] [MarketData] No more data available for ${symbol}`)
-        break
+        const chunkSize = chunkSizes[conn.exchange.toLowerCase()] || 500
+
+        let currentStartTime = startTime
+        let chunksFetched = 0
+
+        while (currentStartTime < endTime && chunksFetched < 50) { // Limit to 50 chunks to prevent infinite loops
+          const chunkEndTime = Math.min(currentStartTime + (chunkSize * getTimeframeMs(timeframe)), endTime)
+
+          const candles = await connector.getOHLCV(symbol, timeframe, chunkSize, currentStartTime, chunkEndTime)
+
+          if (candles && candles.length > 0) {
+            allCandles.push(...candles)
+            chunksFetched++
+            console.log(`[v0] [MarketData] ${conn.exchange}: Fetched ${candles.length} candles (chunk ${chunksFetched}, total: ${allCandles.length})`)
+
+            // Move to next chunk
+            if (candles.length < chunkSize) {
+              // No more data available
+              break
+            }
+            currentStartTime = candles[candles.length - 1].timestamp + getTimeframeMs(timeframe)
+          } else {
+            console.log(`[v0] [MarketData] ${conn.exchange}: No more data available for ${symbol}`)
+            break
+          }
+
+          // Rate limiting between chunks
+          await new Promise(resolve => setTimeout(resolve, 200))
+        }
+
+        if (allCandles.length > 0) {
+          // Sort candles by timestamp to ensure chronological order
+          allCandles.sort((a, b) => a.timestamp - b.timestamp)
+          console.log(`[v0] [MarketData] ✓ Successfully fetched ${allCandles.length} total historical candles from ${conn.exchange}`)
+          return { candles: allCandles, source: conn.exchange }
+        } else {
+          console.log(`[v0] [MarketData] ${conn.exchange}: No data available for ${symbol}`)
+        }
+      } catch (error) {
+        console.warn(`[v0] [MarketData] Failed to fetch from ${conn.exchange}:`, error instanceof Error ? error.message : String(error))
+        continue // Try next exchange
       }
-
-      // Rate limiting
-      await new Promise(resolve => setTimeout(resolve, 100))
     }
 
-    if (allCandles.length > 0) {
-      console.log(`[v0] [MarketData] ✓ Fetched ${allCandles.length} total historical candles from ${conn.exchange}`)
-      return { candles: allCandles, source: conn.exchange }
-    }
-
+    console.log(`[v0] [MarketData] No exchanges were able to provide historical data for ${symbol}`)
     return null
   } catch (error) {
     console.error("[v0] [MarketData] Error fetching historical market data:", error)
@@ -373,17 +407,19 @@ export async function loadMarketDataForEngine(symbols: string[] = []): Promise<n
           console.log(`[v0] [MarketData] ⚠ Using synthetic data for ${symbol} (exchange fetch failed)`)
         }
 
-        // Store 1s timeframe data
-        const marketData1s: MarketData = {
-          symbol,
-          timeframe: "1s",
-          candles: candles1s,
-          lastUpdated: new Date().toISOString(),
-          source,
+        // Store 1s timeframe data (if available)
+        if (candles1s.length > 0) {
+          const marketData1s: MarketData = {
+            symbol,
+            timeframe: "1s",
+            candles: candles1s,
+            lastUpdated: new Date().toISOString(),
+            source,
+          }
+          const key1s = `market_data:${symbol}:1s`
+          await client.set(key1s, JSON.stringify(marketData1s))
+          await client.expire(key1s, 86400)
         }
-        const key1s = `market_data:${symbol}:1s`
-        await client.set(key1s, JSON.stringify(marketData1s))
-        await client.expire(key1s, 86400)
 
         // Store 1m timeframe data
         const marketData1m: MarketData = {
@@ -401,6 +437,11 @@ export async function loadMarketDataForEngine(symbols: string[] = []): Promise<n
         const candlesKey = `market_data:${symbol}:candles`
         await client.set(candlesKey, JSON.stringify(candles1m)) // Use 1m for compatibility
         await client.expire(candlesKey, 86400)
+
+        // Store exchange-specific data for fallback and comparison
+        const exchangeKey = `market_data:${symbol}:${source.toLowerCase()}:1m`
+        await client.set(exchangeKey, JSON.stringify(marketData1m))
+        await client.expire(exchangeKey, 86400)
 
         console.log(`[v0] [MarketData] ✓ Stored ${candles1m.length} candles for ${symbol} (${source})`)
 

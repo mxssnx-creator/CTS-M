@@ -601,9 +601,9 @@ export class OrangeXConnector extends BaseExchangeConnector {
     }
   }
 
-  async getOHLCV(symbol: string, timeframe = "1m", limit = 250): Promise<Array<{timestamp: number; open: number; high: number; low: number; close: number; volume: number}> | null> {
+  async getOHLCV(symbol: string, timeframe = "1m", limit = 250, startTime?: number, endTime?: number): Promise<Array<{timestamp: number; open: number; high: number; low: number; close: number; volume: number}> | null> {
     try {
-      this.log(`Fetching OHLCV for ${symbol} (${timeframe}, ${limit} candles)`)
+      this.log(`Fetching OHLCV for ${symbol} (${timeframe}, ${limit} candles${startTime ? ` from ${new Date(startTime).toISOString()}` : ""}${endTime ? ` to ${new Date(endTime).toISOString()}` : ""})`)
       const baseUrl = this.getBaseUrl()
 
       // Convert timeframe to OrangeX interval format
@@ -613,10 +613,13 @@ export class OrangeXConnector extends BaseExchangeConnector {
       }
       const interval = intervalMap[timeframe] || "1m"
 
-      const response = await this.rateLimitedFetch(
-        `${baseUrl}/v1/market/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`,
-        { headers: { "X-CH-APIKEY": this.credentials.apiKey } }
-      )
+      let url = `${baseUrl}/v1/market/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`
+      if (startTime) url += `&startTime=${startTime}`
+      if (endTime) url += `&endTime=${endTime}`
+
+      const response = await this.rateLimitedFetch(url, {
+        headers: { "X-CH-APIKEY": this.credentials.apiKey }
+      })
 
       const data = await safeParseResponse(response)
 

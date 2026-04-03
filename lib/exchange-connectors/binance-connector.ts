@@ -715,13 +715,13 @@ export class BinanceConnector extends BaseExchangeConnector {
     }
   }
 
-  async getOHLCV(symbol: string, timeframe = "1m", limit = 250): Promise<Array<{timestamp: number; open: number; high: number; low: number; close: number; volume: number}> | null> {
+  async getOHLCV(symbol: string, timeframe = "1m", limit = 250, startTime?: number, endTime?: number): Promise<Array<{timestamp: number; open: number; high: number; low: number; close: number; volume: number}> | null> {
     try {
-      this.log(`Fetching OHLCV for ${symbol} (${timeframe}, ${limit} candles)`)
+      this.log(`Fetching OHLCV for ${symbol} (${timeframe}, ${limit} candles${startTime ? ` from ${new Date(startTime).toISOString()}` : ""}${endTime ? ` to ${new Date(endTime).toISOString()}` : ""})`)
 
       const baseUrl = this.getBaseUrl()
       const apiType = this.credentials.apiType || "perpetual_futures"
-      
+
       // Convert timeframe to Binance interval format
       const intervalMap: Record<string, string> = {
         "1m": "1m", "3m": "3m", "5m": "5m", "15m": "15m", "30m": "30m",
@@ -730,11 +730,15 @@ export class BinanceConnector extends BaseExchangeConnector {
       }
       const interval = intervalMap[timeframe] || "1m"
 
+      let params = `symbol=${symbol}&interval=${interval}&limit=${limit}`
+      if (startTime) params += `&startTime=${startTime}`
+      if (endTime) params += `&endTime=${endTime}`
+
       let endpoint = ""
       if (apiType === "spot") {
-        endpoint = `/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`
+        endpoint = `/api/v3/klines?${params}`
       } else {
-        endpoint = `/fapi/v1/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`
+        endpoint = `/fapi/v1/klines?${params}`
       }
 
       const response = await this.rateLimitedFetch(`${baseUrl}${endpoint}`, {

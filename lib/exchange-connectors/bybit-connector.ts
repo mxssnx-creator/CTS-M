@@ -693,13 +693,13 @@ export class BybitConnector extends BaseExchangeConnector {
     }
   }
 
-  async getOHLCV(symbol: string, timeframe = "1m", limit = 250): Promise<Array<{timestamp: number; open: number; high: number; low: number; close: number; volume: number}> | null> {
+  async getOHLCV(symbol: string, timeframe = "1m", limit = 250, startTime?: number, endTime?: number): Promise<Array<{timestamp: number; open: number; high: number; low: number; close: number; volume: number}> | null> {
     try {
-      this.log(`Fetching OHLCV for ${symbol} (${timeframe}, ${limit} candles)`)
+      this.log(`Fetching OHLCV for ${symbol} (${timeframe}, ${limit} candles${startTime ? ` from ${new Date(startTime).toISOString()}` : ""}${endTime ? ` to ${new Date(endTime).toISOString()}` : ""})`)
 
       const baseUrl = this.getBaseUrl()
       const category = this.credentials.apiType === "spot" ? "spot" : "linear"
-      
+
       // Convert timeframe to Bybit interval format
       const intervalMap: Record<string, string> = {
         "1m": "1", "3m": "3", "5m": "5", "15m": "15", "30m": "30",
@@ -708,9 +708,13 @@ export class BybitConnector extends BaseExchangeConnector {
       }
       const interval = intervalMap[timeframe] || "1"
 
-      const response = await this.rateLimitedFetch(
-        `${baseUrl}/v5/market/kline?category=${category}&symbol=${symbol}&interval=${interval}&limit=${limit}`
-      )
+      let url = `${baseUrl}/v5/market/kline?category=${category}&symbol=${symbol}&interval=${interval}&limit=${limit}`
+
+      // Add time range parameters if provided
+      if (startTime) url += `&start=${startTime}`
+      if (endTime) url += `&end=${endTime}`
+
+      const response = await this.rateLimitedFetch(url)
 
       const data = await response.json()
 

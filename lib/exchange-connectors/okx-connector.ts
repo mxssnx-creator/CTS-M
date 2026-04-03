@@ -748,13 +748,13 @@ export class OKXConnector extends BaseExchangeConnector {
     }
   }
 
-  async getOHLCV(symbol: string, timeframe = "1m", limit = 250): Promise<Array<{timestamp: number; open: number; high: number; low: number; close: number; volume: number}> | null> {
+  async getOHLCV(symbol: string, timeframe = "1m", limit = 250, startTime?: number, endTime?: number): Promise<Array<{timestamp: number; open: number; high: number; low: number; close: number; volume: number}> | null> {
     try {
-      this.log(`Fetching OHLCV for ${symbol} (${timeframe}, ${limit} candles)`)
+      this.log(`Fetching OHLCV for ${symbol} (${timeframe}, ${limit} candles${startTime ? ` from ${new Date(startTime).toISOString()}` : ""}${endTime ? ` to ${new Date(endTime).toISOString()}` : ""})`)
 
       const timestamp = new Date().toISOString()
       const baseUrl = this.getBaseUrl()
-      
+
       // Convert timeframe to OKX bar format
       const intervalMap: Record<string, string> = {
         "1m": "1m", "3m": "3m", "5m": "5m", "15m": "15m", "30m": "30m",
@@ -763,8 +763,12 @@ export class OKXConnector extends BaseExchangeConnector {
       }
       const bar = intervalMap[timeframe] || "1m"
 
+      let params = `instId=${symbol}&bar=${bar}&limit=${limit}`
+      if (startTime) params += `&after=${startTime}` // OKX uses 'after' for start time
+      if (endTime) params += `&before=${endTime}` // OKX uses 'before' for end time
+
       const method = "GET"
-      const requestPath = `/api/v5/market/candles?instId=${symbol}&bar=${bar}&limit=${limit}`
+      const requestPath = `/api/v5/market/candles?${params}`
       const body = ""
       const prehash = timestamp + method + requestPath + body
       const signature = crypto.createHmac("sha256", this.credentials.apiSecret).update(prehash).digest("base64")
