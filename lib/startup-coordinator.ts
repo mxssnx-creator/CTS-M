@@ -144,6 +144,14 @@ export async function completeStartup() {
       totalConnections: allConnections.length,
       environment: process.env.NODE_ENV || "development"
     })
+
+    // Force flush all logs to ensure startup logs are written immediately
+    try {
+      const { flushAllLogBuffers } = await import("@/lib/engine-progression-logs")
+      await flushAllLogBuffers()
+    } catch (e) {
+      console.warn("[v0] [Startup] Could not force flush startup logs:", e)
+    }
   } catch (error) {
     console.error(`[v0] [Startup] ✗ Fatal error during startup:`, error)
     await logProgressionEvent("startup", "startup_error", "error", "Fatal error during startup sequence", {

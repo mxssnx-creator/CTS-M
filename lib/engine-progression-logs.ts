@@ -26,9 +26,9 @@ let flushTimer: NodeJS.Timeout | null = null
 
 // Important phases that should flush immediately
 const IMMEDIATE_FLUSH_PHASES = [
-  "initializing", "prehistoric_data", "indications", "strategies", 
+  "initializing", "prehistoric_data", "indications", "strategies",
   "realtime", "live_trading", "error", "engine_started", "engine_stopped",
-  "engine_starting", "engine_error", "quickstart"
+  "engine_starting", "engine_error", "quickstart", "startup", "system_init"
 ]
 
 /**
