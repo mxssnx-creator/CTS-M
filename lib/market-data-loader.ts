@@ -10,6 +10,7 @@
 
 import { getClient, initRedis, getAllConnections } from "@/lib/redis-db"
 import { createExchangeConnector } from "@/lib/exchange-connectors"
+import { logProgressionEvent } from "@/lib/engine-progression-logs"
 
 export interface MarketDataCandle {
   timestamp: number
@@ -164,17 +165,76 @@ async function fetchHistoricalMarketData(
 
     // Try exchanges in order of preference: BingX, Binance, Bybit, OKX, Pionex, OrangeX
     const exchangePriority = ["bingx", "binance", "bybit", "okx", "pionex", "orangex"]
-    const prioritizedConnections = validConnections.sort((a, b) => {
+    let prioritizedConnections = validConnections.sort((a, b) => {
       const aIndex = exchangePriority.indexOf(a.exchange.toLowerCase())
       const bIndex = exchangePriority.indexOf(b.exchange.toLowerCase())
       return (aIndex === -1 ? 999 : aIndex) - (bIndex === -1 ? 999 : bIndex)
     })
+
+    // If no valid connections found, try to inject predefined credentials for base connections
+    if (prioritizedConnections.length === 0) {
+      console.log(`[v0] [MarketData] No valid connections found, attempting to inject predefined credentials...`)
+
+      try {
+        const { BASE_CONNECTION_CREDENTIALS } = await import("@/lib/base-connection-credentials")
+        const client = getClient()
+
+        // Try to inject credentials for base connections
+        const baseConnections = ["bingx-x01", "bybit-x03", "pionex-x01", "orangex-x01"]
+        for (const connId of baseConnections) {
+          if (BASE_CONNECTION_CREDENTIALS[connId as keyof typeof BASE_CONNECTION_CREDENTIALS]) {
+            const { apiKey, apiSecret } = BASE_CONNECTION_CREDENTIALS[connId as keyof typeof BASE_CONNECTION_CREDENTIALS]
+            if (apiKey && apiSecret && apiKey.length > 10 && apiSecret.length > 10) {
+              await client.hset(`connection:${connId}`, {
+                api_key: apiKey,
+                api_secret: apiSecret,
+                is_enabled_dashboard: "1",
+                is_enabled: "1",
+                exchange: connId.split('-')[0],
+                name: `${connId.split('-')[0].toUpperCase()} Base Connection`,
+                updated_at: new Date().toISOString(),
+              })
+              console.log(`[v0] [MarketData] Injected predefined credentials for ${connId}`)
+            }
+          }
+        }
+
+        // Re-fetch connections after credential injection
+        const updatedConnections = await getAllConnections()
+        const updatedValidConnections = updatedConnections.filter((c: any) => {
+          const hasCredentials = (c.api_key || c.apiKey) && (c.api_secret || c.apiSecret)
+          const hasValidCredentials = hasCredentials &&
+            (c.api_key || c.apiKey || "").length > 5 &&
+            (c.api_secret || c.apiSecret || "").length > 5
+          return hasValidCredentials
+        })
+
+        prioritizedConnections = updatedValidConnections.sort((a, b) => {
+          const aIndex = exchangePriority.indexOf(a.exchange.toLowerCase())
+          const bIndex = exchangePriority.indexOf(b.exchange.toLowerCase())
+          return (aIndex === -1 ? 999 : aIndex) - (bIndex === -1 ? 999 : bIndex)
+        })
+
+        if (prioritizedConnections.length > 0) {
+          console.log(`[v0] [MarketData] ✓ Successfully injected credentials, now have ${prioritizedConnections.length} valid connections`)
+        }
+      } catch (error) {
+        console.warn(`[v0] [MarketData] Failed to inject predefined credentials:`, error instanceof Error ? error.message : String(error))
+      }
+    }
 
     console.log(`[v0] [MarketData] Trying ${prioritizedConnections.length} exchanges for ${symbol} historical data: ${prioritizedConnections.map(c => c.exchange).join(", ")}`)
 
     for (const conn of prioritizedConnections) {
       try {
         console.log(`[v0] [MarketData] Attempting to fetch ${daysBack} days of ${timeframe} data for ${symbol} from ${conn.exchange}`)
+
+        await logProgressionEvent("market-data-loader", "market_data_exchange_attempt", "info", `Attempting to fetch data from ${conn.exchange}`, {
+          exchange: conn.exchange,
+          symbol,
+          timeframe,
+          daysBack,
+        })
 
         const { createExchangeConnector } = await import("@/lib/exchange-connectors")
         const connector = await createExchangeConnector(
@@ -205,16 +265,47 @@ async function fetchHistoricalMarketData(
 
         let currentStartTime = startTime
         let chunksFetched = 0
+        let consecutiveFailures = 0
+        const maxConsecutiveFailures = 3
 
-        while (currentStartTime < endTime && chunksFetched < 50) { // Limit to 50 chunks to prevent infinite loops
+        while (currentStartTime < endTime && chunksFetched < 50 && consecutiveFailures < maxConsecutiveFailures) { // Limit to 50 chunks to prevent infinite loops
           const chunkEndTime = Math.min(currentStartTime + (chunkSize * getTimeframeMs(timeframe)), endTime)
 
-          const candles = await connector.getOHLCV(symbol, timeframe, chunkSize, currentStartTime, chunkEndTime)
+          let candles: MarketDataCandle[] | null = null
+          let retryCount = 0
+          const maxRetries = 3
+
+          // Retry logic with exponential backoff
+          while (retryCount <= maxRetries && !candles) {
+            try {
+              candles = await connector.getOHLCV(symbol, timeframe, chunkSize, currentStartTime, chunkEndTime)
+              if (candles && candles.length > 0) {
+                break // Success, exit retry loop
+              }
+            } catch (error) {
+              console.warn(`[v0] [MarketData] ${conn.exchange}: Chunk fetch failed (attempt ${retryCount + 1}/${maxRetries + 1}):`, error instanceof Error ? error.message : String(error))
+              if (retryCount < maxRetries) {
+                const backoffMs = Math.min(1000 * Math.pow(2, retryCount), 10000) // Exponential backoff, max 10s
+                console.log(`[v0] [MarketData] ${conn.exchange}: Retrying in ${backoffMs}ms...`)
+                await new Promise(resolve => setTimeout(resolve, backoffMs))
+              }
+            }
+            retryCount++
+          }
 
           if (candles && candles.length > 0) {
             allCandles.push(...candles)
             chunksFetched++
-            console.log(`[v0] [MarketData] ${conn.exchange}: Fetched ${candles.length} candles (chunk ${chunksFetched}, total: ${allCandles.length})`)
+            consecutiveFailures = 0 // Reset failure counter
+            console.log(`[v0] [MarketData] ${conn.exchange}: ✓ Fetched ${candles.length} candles (chunk ${chunksFetched}, total: ${allCandles.length})`)
+
+            await logProgressionEvent("market-data-loader", "market_data_chunk_success", "info", `Fetched chunk ${chunksFetched} from ${conn.exchange}`, {
+              exchange: conn.exchange,
+              chunkNumber: chunksFetched,
+              candlesInChunk: candles.length,
+              totalCandles: allCandles.length,
+              timeframe,
+            })
 
             // Move to next chunk
             if (candles.length < chunkSize) {
@@ -223,8 +314,31 @@ async function fetchHistoricalMarketData(
             }
             currentStartTime = candles[candles.length - 1].timestamp + getTimeframeMs(timeframe)
           } else {
-            console.log(`[v0] [MarketData] ${conn.exchange}: No more data available for ${symbol}`)
-            break
+            consecutiveFailures++
+            console.log(`[v0] [MarketData] ${conn.exchange}: No data received for chunk (consecutive failures: ${consecutiveFailures}/${maxConsecutiveFailures})`)
+
+            await logProgressionEvent("market-data-loader", "market_data_chunk_failure", "warning", `Chunk ${chunksFetched + 1} failed from ${conn.exchange}`, {
+              exchange: conn.exchange,
+              chunkNumber: chunksFetched + 1,
+              consecutiveFailures,
+              maxConsecutiveFailures,
+              timeframe,
+            })
+
+            if (consecutiveFailures >= maxConsecutiveFailures) {
+              console.log(`[v0] [MarketData] ${conn.exchange}: Too many consecutive failures, stopping fetch`)
+
+              await logProgressionEvent("market-data-loader", "market_data_exchange_failed", "error", `Exchange ${conn.exchange} failed after ${consecutiveFailures} consecutive failures`, {
+                exchange: conn.exchange,
+                consecutiveFailures,
+                timeframe,
+                daysBack,
+              })
+
+              break
+            }
+            // Move to next chunk even on failure to avoid getting stuck
+            currentStartTime = chunkEndTime
           }
 
           // Rate limiting between chunks
@@ -235,12 +349,39 @@ async function fetchHistoricalMarketData(
           // Sort candles by timestamp to ensure chronological order
           allCandles.sort((a, b) => a.timestamp - b.timestamp)
           console.log(`[v0] [MarketData] ✓ Successfully fetched ${allCandles.length} total historical candles from ${conn.exchange}`)
+
+          await logProgressionEvent("market-data-loader", "market_data_exchange_success", "info", `Successfully fetched ${allCandles.length} candles from ${conn.exchange}`, {
+            exchange: conn.exchange,
+            symbol,
+            candlesCount: allCandles.length,
+            timeframe,
+            daysBack,
+          })
+
           return { candles: allCandles, source: conn.exchange }
         } else {
-          console.log(`[v0] [MarketData] ${conn.exchange}: No data available for ${symbol}`)
+          console.log(`[v0] [MarketData] No exchanges were able to provide historical data for ${symbol}`)
+
+          await logProgressionEvent("market-data-loader", "market_data_all_exchanges_failed", "error", `All exchanges failed to provide historical data for ${symbol}`, {
+            symbol,
+            timeframe,
+            daysBack,
+            exchangesAttempted: prioritizedConnections.map(c => c.exchange),
+          })
+
+          return null
         }
       } catch (error) {
         console.warn(`[v0] [MarketData] Failed to fetch from ${conn.exchange}:`, error instanceof Error ? error.message : String(error))
+
+        await logProgressionEvent("market-data-loader", "market_data_exchange_error", "error", `Failed to fetch from ${conn.exchange}: ${error instanceof Error ? error.message : String(error)}`, {
+          exchange: conn.exchange,
+          symbol,
+          timeframe,
+          daysBack,
+          error: error instanceof Error ? error.message : String(error),
+        })
+
         continue // Try next exchange
       }
     }
@@ -365,10 +506,21 @@ export async function loadMarketDataForEngine(symbols: string[] = []): Promise<n
     console.log(`[v0] [MarketData] Loading market data for ${targetSymbols.length} symbols...`)
     console.log(`[v0] [MarketData] Will try to fetch REAL historical data from exchanges first...`)
 
+    await logProgressionEvent("market-data-loader", "market_data_load_start", "info", `Starting market data load for ${targetSymbols.length} symbols`, {
+      symbols: targetSymbols,
+      symbolsCount: targetSymbols.length,
+    })
+
     let processedSymbols = 0
     for (const symbol of targetSymbols) {
       const progressPercent = Math.round((processedSymbols / targetSymbols.length) * 100)
       console.log(`[v0] [MarketData] Processing ${symbol} (${processedSymbols + 1}/${targetSymbols.length}, ${progressPercent}%)`)
+
+      await logProgressionEvent("market-data-loader", "market_data_symbol_start", "info", `Starting market data load for ${symbol}`, {
+        symbol,
+        progress: `${processedSymbols + 1}/${targetSymbols.length}`,
+        percent: progressPercent,
+      })
       try {
         // Try to fetch historical data first (30 days back)
         // BingX supports 1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 6h, 8h, 12h, 1d, 3d, 1w, 1M
@@ -445,6 +597,13 @@ export async function loadMarketDataForEngine(symbols: string[] = []): Promise<n
 
         console.log(`[v0] [MarketData] ✓ Stored ${candles1m.length} candles for ${symbol} (${source})`)
 
+        await logProgressionEvent("market-data-loader", "market_data_symbol_success", "info", `Successfully loaded ${candles1m.length} candles for ${symbol} from ${source}`, {
+          symbol,
+          candlesCount: candles1m.length,
+          source,
+          timeframe: "1m",
+        })
+
         // CRITICAL: Also write latest candle to hash format so getMarketData() works
         const latestCandle = candles1m[candles1m.length - 1]
         if (latestCandle) {
@@ -473,6 +632,11 @@ export async function loadMarketDataForEngine(symbols: string[] = []): Promise<n
 
         loaded++
         processedSymbols++
+
+        await logProgressionEvent("market-data-loader", "market_data_symbol_complete", "info", `Completed market data load for ${symbol}`, {
+          symbol,
+          success: true,
+        })
       } catch (error) {
         console.error(`[v0] [MarketData] Failed to load ${symbol}:`, error)
       }
@@ -480,6 +644,16 @@ export async function loadMarketDataForEngine(symbols: string[] = []): Promise<n
 
     console.log(`[v0] [MarketData] ✅ Loaded ${loaded}/${targetSymbols.length} symbols`)
     console.log(`[v0] [MarketData]    Real data: ${realDataCount} | Synthetic: ${syntheticCount}`)
+
+    await logProgressionEvent("market-data-loader", "market_data_load_complete", loaded === targetSymbols.length ? "info" : "warning",
+      `Market data loading completed: ${loaded}/${targetSymbols.length} symbols loaded (${realDataCount} real, ${syntheticCount} synthetic)`, {
+      totalSymbols: targetSymbols.length,
+      loadedSymbols: loaded,
+      realDataCount,
+      syntheticCount,
+      success: loaded > 0,
+    })
+
     return loaded
   } catch (error) {
     console.error("[v0] [MarketData] Failed to load market data:", error)
