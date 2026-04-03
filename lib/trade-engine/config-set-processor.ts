@@ -76,7 +76,7 @@ export class ConfigSetProcessor {
    * Process prehistoric data through all config sets
    * Main entry point for Phase 6 processing
    */
-  async processPrehistoricData(symbols: string[]): Promise<ProcessingResult> {
+  async processPrehistoricData(symbols: string[], timeframe: string = "1s"): Promise<ProcessingResult> {
     const startTime = Date.now()
     console.log(`[v0] [ConfigSetProcessor] Starting prehistoric processing for ${symbols.length} symbols`)
 
@@ -100,9 +100,18 @@ export class ConfigSetProcessor {
 
     for (const symbol of symbols) {
       try {
-        const candlesRaw = await client.get(`market_data:${symbol}:candles`)
-        const candles = candlesRaw ? JSON.parse(candlesRaw) : []
+        // Try to get candles for the specific timeframe first
+        const timeframeKey = `market_data:${symbol}:${timeframe}`
+        let candlesRaw = await client.get(timeframeKey)
+        let candles = candlesRaw ? JSON.parse(candlesRaw) : []
 
+        // Fallback to candles array if timeframe-specific data not found
+        if (!candles || candles.length === 0) {
+          candlesRaw = await client.get(`market_data:${symbol}:candles`)
+          candles = candlesRaw ? JSON.parse(candlesRaw) : []
+        }
+
+        // Final fallback to 1m data
         if (!candles || candles.length === 0) {
           const marketDataRaw = await client.get(`market_data:${symbol}:1m`)
           if (marketDataRaw) {

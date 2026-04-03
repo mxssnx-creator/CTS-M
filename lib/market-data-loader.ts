@@ -45,7 +45,7 @@ export function generateSyntheticCandles(
 
   for (let i = candleCount; i > 0; i--) {
     const timestamp = now - i * candleInterval
-    
+
     // Generate realistic price movement (±0.5% per candle)
     const change = (Math.random() - 0.5) * lastClose * 0.01
     const open = lastClose
@@ -67,6 +67,178 @@ export function generateSyntheticCandles(
   }
 
   return candles
+}
+
+/**
+ * Aggregate 1-second candles into 1-minute candles
+ */
+export function aggregateCandlesTo1m(candles1s: MarketDataCandle[]): MarketDataCandle[] {
+  const candles1m: MarketDataCandle[] = []
+  const minuteGroups = new Map<number, MarketDataCandle[]>()
+
+  // Group 1s candles by minute
+  for (const candle of candles1s) {
+    const minuteTimestamp = Math.floor(candle.timestamp / 60000) * 60000
+    if (!minuteGroups.has(minuteTimestamp)) {
+      minuteGroups.set(minuteTimestamp, [])
+    }
+    minuteGroups.get(minuteTimestamp)!.push(candle)
+  }
+
+  // Aggregate each minute
+  for (const [timestamp, minuteCandles] of minuteGroups) {
+    const open = minuteCandles[0].open
+    const close = minuteCandles[minuteCandles.length - 1].close
+    const high = Math.max(...minuteCandles.map(c => c.high))
+    const low = Math.min(...minuteCandles.map(c => c.low))
+    const volume = minuteCandles.reduce((sum, c) => sum + c.volume, 0)
+
+    candles1m.push({
+      timestamp,
+      open,
+      high,
+      low,
+      close,
+      volume,
+    })
+  }
+
+  return candles1m.sort((a, b) => a.timestamp - b.timestamp)
+}
+
+/**
+ * Interpolate 1-minute candles into 1-second candles (for fallback)
+ */
+export function interpolateCandlesTo1s(candles1m: MarketDataCandle[]): MarketDataCandle[] {
+  const candles1s: MarketDataCandle[] = []
+
+  for (const candle1m of candles1m) {
+    // Create 60 candles for each minute (simple interpolation)
+    for (let i = 0; i < 60; i++) {
+      const timestamp = candle1m.timestamp + i * 1000
+      // Linear interpolation between open and close
+      const progress = i / 59
+      const price = candle1m.open + (candle1m.close - candle1m.open) * progress
+      // Add some noise
+      const noise = (Math.random() - 0.5) * price * 0.001
+      const finalPrice = price + noise
+
+      candles1s.push({
+        timestamp,
+        open: finalPrice,
+        high: Math.max(finalPrice, candle1m.high * (0.999 + Math.random() * 0.002)),
+        low: Math.min(finalPrice, candle1m.low * (0.998 + Math.random() * 0.004)),
+        close: finalPrice,
+        volume: candle1m.volume / 60, // Distribute volume evenly
+      })
+    }
+  }
+
+  return candles1s
+}
+
+/**
+ * Fetch large amounts of historical OHLCV data with pagination
+ */
+async function fetchHistoricalMarketData(
+  symbol: string,
+  timeframe = "1m",
+  daysBack = 30
+): Promise<{ candles: MarketDataCandle[]; source: string } | null> {
+  try {
+    // Get all connections with credentials
+    const connections = await getAllConnections()
+    const validConnections = connections.filter((c: any) => {
+      const hasCredentials = (c.api_key || c.apiKey) && (c.api_secret || c.apiSecret)
+      const hasValidCredentials = hasCredentials &&
+        (c.api_key || c.apiKey || "").length > 5 &&
+        (c.api_secret || c.apiSecret || "").length > 5
+      return hasValidCredentials && c.exchange === "bingx" // Only BingX for now
+    })
+
+    if (validConnections.length === 0) {
+      console.log(`[v0] [MarketData] No valid BingX connections for historical data fetch`)
+      return null
+    }
+
+    const conn = validConnections[0] // Use first BingX connection
+    const { createExchangeConnector } = await import("@/lib/exchange-connectors")
+    const connector = await createExchangeConnector(
+      conn.exchange,
+      {
+        apiKey: conn.api_key || conn.apiKey || "",
+        apiSecret: conn.api_secret || conn.apiSecret || "",
+        apiType: (conn.api_type || "perpetual_futures") as "spot" | "perpetual_futures" | "unified",
+        isTestnet: conn.is_testnet === "1" || conn.is_testnet === true,
+      }
+    )
+
+    console.log(`[v0] [MarketData] Fetching ${daysBack} days of ${timeframe} data for ${symbol} from ${conn.exchange}`)
+
+    const endTime = Date.now()
+    const startTime = endTime - (daysBack * 24 * 60 * 60 * 1000)
+    const allCandles: MarketDataCandle[] = []
+
+    // Fetch data in chunks to avoid API limits
+    const chunkSize = 1000 // BingX max limit per request
+    let currentStartTime = startTime
+
+    while (currentStartTime < endTime) {
+      const chunkEndTime = Math.min(currentStartTime + (chunkSize * getTimeframeMs(timeframe)), endTime)
+
+      const candles = await connector.getOHLCV(symbol, timeframe, chunkSize, currentStartTime, chunkEndTime)
+
+      if (candles && candles.length > 0) {
+        allCandles.push(...candles)
+        console.log(`[v0] [MarketData] Fetched ${candles.length} candles (${new Date(currentStartTime).toISOString()} to ${new Date(chunkEndTime).toISOString()})`)
+
+        // Move to next chunk
+        if (candles.length < chunkSize) {
+          // No more data available
+          break
+        }
+        currentStartTime = candles[candles.length - 1].timestamp + getTimeframeMs(timeframe)
+      } else {
+        console.log(`[v0] [MarketData] No more data available for ${symbol}`)
+        break
+      }
+
+      // Rate limiting
+      await new Promise(resolve => setTimeout(resolve, 100))
+    }
+
+    if (allCandles.length > 0) {
+      console.log(`[v0] [MarketData] ✓ Fetched ${allCandles.length} total historical candles from ${conn.exchange}`)
+      return { candles: allCandles, source: conn.exchange }
+    }
+
+    return null
+  } catch (error) {
+    console.error("[v0] [MarketData] Error fetching historical market data:", error)
+    return null
+  }
+}
+
+/**
+ * Get milliseconds for a timeframe
+ */
+function getTimeframeMs(timeframe: string): number {
+  const multipliers: Record<string, number> = {
+    "1s": 1000,
+    "5s": 5000,
+    "15s": 15000,
+    "30s": 30000,
+    "1m": 60000,
+    "5m": 300000,
+    "15m": 900000,
+    "30m": 1800000,
+    "1h": 3600000,
+    "4h": 14400000,
+    "1d": 86400000,
+    "1w": 604800000,
+    "1M": 2592000000,
+  }
+  return multipliers[timeframe] || 60000
 }
 
 /**
@@ -157,48 +329,83 @@ export async function loadMarketDataForEngine(symbols: string[] = []): Promise<n
     let syntheticCount = 0
 
     console.log(`[v0] [MarketData] Loading market data for ${targetSymbols.length} symbols...`)
-    console.log(`[v0] [MarketData] Will try to fetch REAL data from exchanges first...`)
+    console.log(`[v0] [MarketData] Will try to fetch REAL historical data from exchanges first...`)
 
+    let processedSymbols = 0
     for (const symbol of targetSymbols) {
+      const progressPercent = Math.round((processedSymbols / targetSymbols.length) * 100)
+      console.log(`[v0] [MarketData] Processing ${symbol} (${processedSymbols + 1}/${targetSymbols.length}, ${progressPercent}%)`)
       try {
-        // Try to fetch real data first
-        const realData = await fetchRealMarketData(symbol, "1m", 250)
+        // Try to fetch historical data first (30 days back)
+        // BingX supports 1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 6h, 8h, 12h, 1d, 3d, 1w, 1M
+        let realData = await fetchHistoricalMarketData(symbol, "1m", 30)
+        if (!realData || realData.candles.length === 0) {
+          // Final fallback to real-time fetch
+          realData = await fetchRealMarketData(symbol, "1m", 1500)
+        }
         
-        let candles: MarketDataCandle[]
+        let candles1s: MarketDataCandle[] = []
+        let candles1m: MarketDataCandle[] = []
         let source: string
-        
+
         if (realData && realData.candles.length > 0) {
-          candles = realData.candles
+          // Determine if we got 1s or 1m data
+          const is1sData = realData.candles.length > 0 && realData.candles[0] &&
+            (Date.now() - realData.candles[0].timestamp) < 60000 // Recent data suggests 1s
+          if (is1sData) {
+            candles1s = realData.candles
+            // Convert 1s to 1m by aggregating
+            candles1m = aggregateCandlesTo1m(candles1s)
+          } else {
+            candles1m = realData.candles
+            // Generate 1s from 1m data (interpolation)
+            candles1s = interpolateCandlesTo1s(candles1m)
+          }
           source = realData.source
           realDataCount++
         } else {
           // Fall back to synthetic data
           const basePrice = basePrices[symbol] || 100
-          candles = generateSyntheticCandles(symbol, basePrice, 250)
+          candles1m = generateSyntheticCandles(symbol, basePrice, 250)
+          candles1s = interpolateCandlesTo1s(candles1m)
           source = "synthetic"
           syntheticCount++
           console.log(`[v0] [MarketData] ⚠ Using synthetic data for ${symbol} (exchange fetch failed)`)
         }
 
-        const marketData: MarketData = {
+        // Store 1s timeframe data
+        const marketData1s: MarketData = {
           symbol,
-          timeframe: "1m",
-          candles,
+          timeframe: "1s",
+          candles: candles1s,
           lastUpdated: new Date().toISOString(),
           source,
         }
+        const key1s = `market_data:${symbol}:1s`
+        await client.set(key1s, JSON.stringify(marketData1s))
+        await client.expire(key1s, 86400)
 
-        const key = `market_data:${symbol}:1m`
-        await client.set(key, JSON.stringify(marketData))
-        await client.expire(key, 86400) // 24 hour TTL
+        // Store 1m timeframe data
+        const marketData1m: MarketData = {
+          symbol,
+          timeframe: "1m",
+          candles: candles1m,
+          lastUpdated: new Date().toISOString(),
+          source,
+        }
+        const key1m = `market_data:${symbol}:1m`
+        await client.set(key1m, JSON.stringify(marketData1m))
+        await client.expire(key1m, 86400)
 
         // Store raw candles array for indication processor historical access
         const candlesKey = `market_data:${symbol}:candles`
-        await client.set(candlesKey, JSON.stringify(candles))
+        await client.set(candlesKey, JSON.stringify(candles1m)) // Use 1m for compatibility
         await client.expire(candlesKey, 86400)
 
+        console.log(`[v0] [MarketData] ✓ Stored ${candles1m.length} candles for ${symbol} (${source})`)
+
         // CRITICAL: Also write latest candle to hash format so getMarketData() works
-        const latestCandle = candles[candles.length - 1]
+        const latestCandle = candles1m[candles1m.length - 1]
         if (latestCandle) {
           const hashKey = `market_data:${symbol}`
           const flatHash: Record<string, string> = {
@@ -212,7 +419,7 @@ export async function loadMarketDataForEngine(symbols: string[] = []): Promise<n
             close: String(latestCandle.close),
             volume: String(latestCandle.volume),
             timestamp: new Date(latestCandle.timestamp).toISOString(),
-            candles_count: String(candles.length),
+            candles_count: String(candles1m.length),
             data_source: source,
           }
           const flatArgs: string[] = []
@@ -221,13 +428,10 @@ export async function loadMarketDataForEngine(symbols: string[] = []): Promise<n
           }
           await client.hmset(hashKey, ...flatArgs)
           await client.expire(hashKey, 86400)
-          
-          const priceStr = latestCandle.close.toFixed(2)
-          const sourceLabel = source === "synthetic" ? "(synthetic)" : `(real: ${source})`
-          console.log(`[v0] [MarketData] ✓ ${symbol}: $${priceStr} ${sourceLabel}`)
         }
 
         loaded++
+        processedSymbols++
       } catch (error) {
         console.error(`[v0] [MarketData] Failed to load ${symbol}:`, error)
       }

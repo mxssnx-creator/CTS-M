@@ -255,7 +255,7 @@ export abstract class BaseExchangeConnector {
 
   abstract getTicker(symbol: string): Promise<{ bid: number; ask: number; last: number } | null>
 
-  abstract getOHLCV(symbol: string, timeframe?: string, limit?: number): Promise<Array<{timestamp: number; open: number; high: number; low: number; close: number; volume: number}> | null>
+  abstract getOHLCV(symbol: string, timeframe?: string, limit?: number, startTime?: number, endTime?: number): Promise<Array<{timestamp: number; open: number; high: number; low: number; close: number; volume: number}> | null>
 
   async getTopSymbols(_limit?: number): Promise<string[]> {
     return []

@@ -404,11 +404,17 @@ export class TradeEngineManager {
         return
       }
 
+      // Get settings to determine timeframe for prehistoric processing
+      const settings = await getSettings(`connection:${this.connectionId}`) || {}
+      const marketTimeframe = settings.marketTimeframe || 1 // Default to 1 second
+      const timeframeString = marketTimeframe === 1 ? "1s" : `${marketTimeframe}s`
+
       const symbols = await this.getSymbols()
-      console.log(`[v0] [Prehistoric] Loading data for ${symbols.length} symbol(s)`)
+      console.log(`[v0] [Prehistoric] Loading data for ${symbols.length} symbol(s) using ${timeframeString} timeframe`)
       await logProgressionEvent(this.connectionId, "prehistoric_data_scan", "info", "Scanning symbols for prehistoric processing", {
         symbols,
         symbolsCount: symbols.length,
+        timeframe: timeframeString,
       })
 
       const prehistoricEnd = new Date()
@@ -426,8 +432,8 @@ export class TradeEngineManager {
       })
       
       // PHASE 6: Process prehistoric data through config sets to fill results
-      console.log("[v0] [Prehistoric] Phase 6: Processing prehistoric data through config sets...")
-      const processingResult = await configProcessor.processPrehistoricData(symbols)
+      console.log(`[v0] [Prehistoric] Phase 6: Processing prehistoric data through config sets using ${timeframeString} timeframe...`)
+      const processingResult = await configProcessor.processPrehistoricData(symbols, timeframeString)
       console.log(`[v0] [Prehistoric] Config set processing complete: ${processingResult.indicationResults} indication results, ${processingResult.strategyPositions} positions in ${processingResult.duration}ms`)
       await logProgressionEvent(this.connectionId, "prehistoric_processed", processingResult.errors > 0 ? "warning" : "info", "Prehistoric data processing completed", {
         symbolsTotal: processingResult.symbolsTotal,

@@ -841,7 +841,7 @@ export class BingXConnector extends BaseExchangeConnector {
     }
   }
 
-  async getOHLCV(symbol: string, timeframe = "1m", limit = 250): Promise<Array<{timestamp: number; open: number; high: number; low: number; close: number; volume: number}> | null> {
+  async getOHLCV(symbol: string, timeframe = "1m", limit = 250, startTime?: number, endTime?: number): Promise<Array<{timestamp: number; open: number; high: number; low: number; close: number; volume: number}> | null> {
     try {
       this.log(`Fetching OHLCV for ${symbol} (${timeframe}, ${limit} candles)`)
 
@@ -849,9 +849,11 @@ export class BingXConnector extends BaseExchangeConnector {
       const apiType = this.credentials.apiType || "perpetual_futures"
       
       // Convert timeframe to BingX interval format
+      // BingX supported intervals: 1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 6h, 8h, 12h, 1d, 3d, 1w, 1M
       const intervalMap: Record<string, string> = {
-        "1m": "1m", "5m": "5m", "15m": "15m", "30m": "30m",
-        "1h": "1h", "4h": "4h", "1d": "1d", "1w": "1w", "1M": "1M"
+        "1m": "1m", "3m": "3m", "5m": "5m", "15m": "15m", "30m": "30m",
+        "1h": "1h", "2h": "2h", "4h": "4h", "6h": "6h", "8h": "8h", "12h": "12h",
+        "1d": "1d", "3d": "3d", "1w": "1w", "1M": "1M"
       }
       const interval = intervalMap[timeframe] || "1m"
 
@@ -868,10 +870,16 @@ export class BingXConnector extends BaseExchangeConnector {
       }
 
       let endpoint = ""
+      let params = `symbol=${bingxSymbol}&interval=${interval}&limit=${limit}`
+
+      // Add time range parameters if provided
+      if (startTime) params += `&startTime=${startTime}`
+      if (endTime) params += `&endTime=${endTime}`
+
       if (apiType === "spot") {
-        endpoint = `/openApi/spot/v2/market/kline?symbol=${bingxSymbol}&interval=${interval}&limit=${limit}`
+        endpoint = `/openApi/spot/v2/market/kline?${params}`
       } else {
-        endpoint = `/openApi/swap/v3/quote/klines?symbol=${bingxSymbol}&interval=${interval}&limit=${limit}`
+        endpoint = `/openApi/swap/v3/quote/klines?${params}`
       }
 
       const response = await this.rateLimitedFetch(`${baseUrl}${endpoint}`, {
