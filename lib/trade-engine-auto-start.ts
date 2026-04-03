@@ -11,6 +11,7 @@ import { getGlobalTradeEngineCoordinator } from "./trade-engine"
 import { getAllConnections, getRedisClient, initRedis, setSettings } from "./redis-db"
 import { loadSettingsAsync } from "./settings-storage"
 import { hasConnectionCredentials, isConnectionMainProcessing } from "./connection-state-utils"
+import { logProgressionEvent } from "./engine-progression-logs"
 
 let autoStartInitialized = false
 let autoStartTimer: NodeJS.Timeout | null = null
@@ -35,28 +36,42 @@ export async function initializeTradeEngineAutoStart(): Promise<void> {
 
   try {
     console.log("[v0] [Auto-Start] Starting trade engine auto-initialization...")
+    await logProgressionEvent("auto-start", "auto_start_init", "info", "Starting trade engine auto-initialization", {})
+
     await initRedis()
     const client = getRedisClient()
-    
+
     // Start engines for all connections with valid credentials
     const connections = await getAllConnections()
     if (Array.isArray(connections)) {
       const coordinator = getGlobalTradeEngineCoordinator()
-      
+
       // Set global engine state to running
       await client.hset("trade_engine:global", {
         status: "running",
         started_at: new Date().toISOString(),
         auto_start: "true",
       })
-      
+
+      await logProgressionEvent("auto-start", "auto_start_global_state", "info", "Set global engine state to running", {})
+
       let startedCount = 0
+      let skippedCount = 0
+      let failedCount = 0
+
       for (const conn of connections) {
         const hasValidCredentials = hasConnectionCredentials(conn, 20, false)
         const isMainProcessing = isConnectionMainProcessing(conn)
-        
-        if (!hasValidCredentials) continue
-        
+
+        if (!hasValidCredentials) {
+          skippedCount++
+          await logProgressionEvent("auto-start", "auto_start_skip_no_creds", "info", `Skipping ${conn.id}: no valid credentials`, {
+            connectionId: conn.id,
+            exchange: conn.exchange
+          })
+          continue
+        }
+
         // Enable connection for processing if not already
         if (!isMainProcessing) {
           await client.hset(`connection:${conn.id}`, {
@@ -65,9 +80,23 @@ export async function initializeTradeEngineAutoStart(): Promise<void> {
             is_active: "1",
             updated_at: new Date().toISOString(),
           })
+          await logProgressionEvent("auto-start", "auto_start_enabled", "info", `Enabled connection ${conn.id} for processing`, {
+            connectionId: conn.id,
+            exchange: conn.exchange
+          })
+        } else {
+          await logProgressionEvent("auto-start", "auto_start_already_enabled", "info", `Connection ${conn.id} already enabled for processing`, {
+            connectionId: conn.id,
+            exchange: conn.exchange
+          })
         }
-        
+
         try {
+          await logProgressionEvent("auto-start", "auto_start_engine_starting", "info", `Starting engine for ${conn.id}`, {
+            connectionId: conn.id,
+            exchange: conn.exchange
+          })
+
           await coordinator.startEngine(conn.id, {
             connectionId: conn.id,
             connection_name: conn.name,
@@ -78,19 +107,43 @@ export async function initializeTradeEngineAutoStart(): Promise<void> {
           })
           startedCount++
           console.log(`[v0] [Auto-Start] ✓ Engine started for ${conn.id}`)
+
+          await logProgressionEvent("auto-start", "auto_start_engine_started", "info", `Engine successfully started for ${conn.id}`, {
+            connectionId: conn.id,
+            exchange: conn.exchange
+          })
         } catch (e) {
           console.error(`[v0] [Auto-Start] Failed to start engine for ${conn.id}:`, e)
+          failedCount++
+
+          await logProgressionEvent("auto-start", "auto_start_engine_failed", "error", `Failed to start engine for ${conn.id}: ${e instanceof Error ? e.message : String(e)}`, {
+            connectionId: conn.id,
+            exchange: conn.exchange,
+            error: e instanceof Error ? e.message : String(e)
+          })
         }
       }
-      
+
       console.log(`[v0] [Auto-Start] Started ${startedCount} engine(s) for connections with valid credentials`)
+
+      await logProgressionEvent("auto-start", "auto_start_complete", "info", `Auto-start complete: ${startedCount} started, ${skippedCount} skipped, ${failedCount} failed`, {
+        enginesStarted: startedCount,
+        enginesSkipped: skippedCount,
+        enginesFailed: failedCount,
+        totalConnections: connections.length
+      })
     }
-    
+
     console.log("[v0] [Auto-Start] Auto-initialization complete")
     autoStartInitialized = true
     startConnectionMonitoring()
+
+    await logProgressionEvent("auto-start", "auto_start_monitor_started", "info", "Connection monitoring started", {})
   } catch (error) {
     console.error("[v0] [Auto-Start] Initialization failed:", error)
+    await logProgressionEvent("auto-start", "auto_start_error", "error", `Auto-start initialization failed: ${error instanceof Error ? error.message : String(error)}`, {
+      error: error instanceof Error ? error.message : String(error)
+    })
     autoStartInitialized = true
     startConnectionMonitoring()
   }
