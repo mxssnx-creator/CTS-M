@@ -149,19 +149,31 @@ class ComprehensiveTestRunner {
    * Start dev server
    */
   private async startDevServer(): Promise<boolean> {
+    console.log('🔧 Checking if dev server is already running...')
+
+    try {
+      await this.makeRequest('/api/system/health', 'GET', 1000)
+      console.log('✅ Dev server is already running, skipping start')
+      return true
+    } catch {
+      // Server not running, start it
+    }
+
     console.log('🔧 Starting Next.js dev server...')
 
     return new Promise((resolve) => {
-      this.devProcess = spawn('npm', ['run', 'dev'], {
+      this.devProcess = spawn('bun', ['run', 'dev'], {
         stdio: ['inherit', 'pipe', 'pipe'],
         cwd: process.cwd(),
         env: { ...process.env, NODE_ENV: 'development' }
       })
 
       let outputBuffer = ''
+      let resolved = false
       const checkReady = (data: Buffer) => {
         outputBuffer += data.toString()
-        if (outputBuffer.includes('Ready') || outputBuffer.includes('started server on')) {
+        if (!resolved && (outputBuffer.includes('Ready') || outputBuffer.includes('started server on') || outputBuffer.includes('Local:') || outputBuffer.includes('ready'))) {
+          resolved = true
           resolve(true)
         }
       }
@@ -175,11 +187,18 @@ class ComprehensiveTestRunner {
 
       this.devProcess.on('error', (error) => {
         console.error('Failed to start dev server:', error)
-        resolve(false)
+        if (!resolved) {
+          resolved = true
+          resolve(false)
+        }
       })
 
-      // Timeout after 30 seconds
-      setTimeout(() => resolve(false), 30000)
+      setTimeout(() => {
+        if (!resolved) {
+          resolved = true
+          resolve(false)
+        }
+      }, 60000)
     })
   }
 

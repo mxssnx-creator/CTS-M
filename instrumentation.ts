@@ -99,24 +99,23 @@ export async function register() {
     console.error("[ERROR_HANDLERS] Failed to set up process error handlers:", error)
   }
 
-  // Run full startup sequence: Redis init, migrations, connections with real credentials
+  // Run lightweight startup sequence: Redis init and migrations only
+  // Full engine startup is deferred to first API request (lazy startup)
+  // to avoid pulling exchange connectors (with crypto dependency) into client bundle
   try {
     const { initRedis } = await import("@/lib/redis-db")
     const { runMigrations } = await import("@/lib/redis-migrations")
-    const { completeStartup } = await import("@/lib/startup-coordinator")
 
-    console.log("[v0] [Startup] Running full startup sequence via instrumentation...")
+    console.log("[v0] [Startup] Running lightweight startup sequence via instrumentation...")
 
     // Step 1: Initialize Redis (in-memory)
     await initRedis()
 
-    // Step 2: Run all database migrations (creates schema, seeds connections with real credentials)
+    // Step 2: Run all database migrations (creates schema, seeds connections)
     await runMigrations()
 
-    // Step 3: Run full startup coordinator (validates, consolidates, auto-starts engines for valid connections)
-    await completeStartup()
-
-    console.log("[v0] [Startup] Full startup sequence complete - system ready")
+    console.log("[v0] [Startup] Lightweight startup sequence complete - Redis and migrations ready")
+    console.log("[v0] [Startup] Full engine startup deferred to first API request")
   } catch (error) {
     console.error("[v0] [Startup] Fatal error during startup sequence:", error)
   }

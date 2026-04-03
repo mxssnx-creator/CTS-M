@@ -221,6 +221,67 @@ export class GlobalTradeEngineCoordinator {
   }
 
   /**
+   * Recover engines from Redis state after process restart
+   * Called during startup to reconcile in-memory state with Redis
+   */
+  async recoverEnginesFromRedis(): Promise<void> {
+    try {
+      console.log("[v0] [Coordinator] Recovering engine state from Redis...")
+      const { initRedis, getAllConnections } = await import("@/lib/redis-db")
+      await initRedis()
+      
+      const allConnections = await getAllConnections()
+      if (!Array.isArray(allConnections)) {
+        console.log("[v0] [Coordinator] No connections to recover")
+        return
+      }
+
+      let recoveredCount = 0
+      let skippedCount = 0
+
+      for (const connection of allConnections) {
+        const connId = connection.id
+        const hasCredentials = (connection.api_key || connection.apiKey || "").length > 5 && 
+          (connection.api_secret || connection.apiSecret || "").length > 5
+        const isMainProcessing = (connection.is_inserted === "1" || connection.is_inserted === 1 || connection.is_inserted === true) &&
+          (connection.is_enabled_dashboard === "1" || connection.is_enabled_dashboard === 1 || connection.is_enabled_dashboard === true)
+
+        if (!isMainProcessing || !hasCredentials) {
+          skippedCount++
+          continue
+        }
+
+        if (this.engineManagers.has(connId)) {
+          continue
+        }
+
+        try {
+          const { loadSettingsAsync } = await import("@/lib/settings-storage")
+          const settings = await loadSettingsAsync()
+          const config: EngineConfig = {
+            connectionId: connId,
+            connection_name: connection.name,
+            exchange: connection.exchange,
+            engine_type: "main",
+            indicationInterval: settings.mainEngineIntervalMs ? settings.mainEngineIntervalMs / 1000 : 5,
+            strategyInterval: settings.strategyUpdateIntervalMs ? settings.strategyUpdateIntervalMs / 1000 : 10,
+            realtimeInterval: settings.realtimeIntervalMs ? settings.realtimeIntervalMs / 1000 : 3,
+          }
+          await this.startEngine(connId, config)
+          recoveredCount++
+          console.log(`[v0] [Coordinator] ✓ Recovered engine for ${connection.name}`)
+        } catch (error) {
+          console.error(`[v0] [Coordinator] Failed to recover engine for ${connection.name}:`, error)
+        }
+      }
+
+      console.log(`[v0] [Coordinator] Recovery complete: ${recoveredCount} recovered, ${skippedCount} skipped`)
+    } catch (error) {
+      console.error("[v0] [Coordinator] Engine recovery failed:", error)
+    }
+  }
+
+  /**
    * Start all engines for enabled connections (modern Redis-based)
    */
   async startAll(): Promise<void> {

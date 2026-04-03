@@ -63,32 +63,32 @@ export async function initializeTradeEngineAutoStart(): Promise<void> {
         const hasValidCredentials = hasConnectionCredentials(conn, 20, false)
         const isMainProcessing = isConnectionMainProcessing(conn)
 
+        // Skip connections without valid credentials
         if (!hasValidCredentials) {
           skippedCount++
-          await logProgressionEvent("auto-start", "auto_start_skip_no_creds", "info", `Skipping ${conn.id}: no valid credentials`, {
+          continue
+        }
+
+        // Only start engines for connections that are already enabled for processing
+        // Do NOT auto-enable connections - respects user control
+        if (!isMainProcessing) {
+          skippedCount++
+          await logProgressionEvent("auto-start", "auto_start_skip_not_enabled", "info", `Skipping ${conn.id}: not enabled for main processing`, {
             connectionId: conn.id,
             exchange: conn.exchange
           })
           continue
         }
 
-        // Enable connection for processing if not already
+        // Only start engines for connections that are already enabled for processing
+        // Do NOT auto-enable connections - respects user control
         if (!isMainProcessing) {
-          await client.hset(`connection:${conn.id}`, {
-            is_active_inserted: "1",
-            is_enabled_dashboard: "1",
-            is_active: "1",
-            updated_at: new Date().toISOString(),
-          })
-          await logProgressionEvent("auto-start", "auto_start_enabled", "info", `Enabled connection ${conn.id} for processing`, {
+          skippedCount++
+          await logProgressionEvent("auto-start", "auto_start_skip_not_enabled", "info", `Skipping ${conn.id}: not enabled for main processing`, {
             connectionId: conn.id,
             exchange: conn.exchange
           })
-        } else {
-          await logProgressionEvent("auto-start", "auto_start_already_enabled", "info", `Connection ${conn.id} already enabled for processing`, {
-            connectionId: conn.id,
-            exchange: conn.exchange
-          })
+          continue
         }
 
         try {
@@ -171,13 +171,16 @@ function startConnectionMonitoring(): void {
 
     monitorCycleInFlight = true
     try {
-      // Always check global engine status first
       await initRedis()
       const monClient = getRedisClient()
-      const monGlobalState = await monClient.hgetall("trade_engine:global")
-      if (monGlobalState?.status !== "running") {
-        // Global engine not running - don't auto-start any connections
-        return
+      
+      // Check global engine state but don't bail out if not set - try recovery anyway
+      let globalRunning = false
+      try {
+        const monGlobalState = await monClient.hgetall("trade_engine:global")
+        globalRunning = monGlobalState?.status === "running"
+      } catch {
+        // Redis read error, continue anyway
       }
       
       const connections = await getAllConnections()
@@ -200,9 +203,9 @@ function startConnectionMonitoring(): void {
         .sort()
         .join(",")
 
-      // If enabled connection set changed, log it (but don't auto-start)
+      // If enabled connection set changed, log it
       if (enabledSignature !== lastEnabledSignature) {
-        console.log(`[v0] [Monitor] Enabled connections changed: ${lastEnabledCount} -> ${enabledConnections.length} (manual start required)`)
+        console.log(`[v0] [Monitor] Enabled connections changed: ${lastEnabledCount} -> ${enabledConnections.length}`)
         lastEnabledCount = enabledConnections.length
         lastEnabledSignature = enabledSignature
       }

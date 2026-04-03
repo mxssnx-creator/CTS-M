@@ -128,20 +128,53 @@ export async function completeStartup() {
 
     console.log(`[v0] [Startup] Step 8/8: Auto-starting engines for valid connections...`)
     await logProgressionEvent("startup", "startup_engine_autostart", "info", "Starting engines for valid connections", {})
+    
+    // Set global engine state to running BEFORE starting individual engines
+    // This ensures the auto-start monitor and other components see the system as active
+    try {
+      const { getRedisClient } = await import("@/lib/redis-db")
+      const startupClient = getRedisClient()
+      await startupClient.hset("trade_engine:global", {
+        status: "running",
+        started_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        startup_sequence: "complete",
+      })
+      console.log(`[v0] [Startup] ✓ Global engine state set to "running"`)
+    } catch (e) {
+      console.warn(`[v0] [Startup] Warning: Could not set global engine state: ${e}`)
+    }
+    
     const startedCount = await autoStartValidConnections(coordinator, allConnections)
     console.log(`[v0] [Startup] ✓ Auto-started ${startedCount} engine(s)\n`)
     await logProgressionEvent("startup", "startup_engine_autostart_complete", "info", `Auto-started ${startedCount} engine(s) for connections with valid credentials`, { enginesStarted: startedCount })
+
+    // Step 9: Recover any engines that were running before restart
+    console.log(`[v0] [Startup] Step 9/9: Recovering engine state from Redis...`)
+    await logProgressionEvent("startup", "startup_engine_recovery", "info", "Recovering engine state from Redis", {})
+    await coordinator.recoverEnginesFromRedis()
+    console.log(`[v0] [Startup] ✓ Engine recovery complete\n`)
+    await logProgressionEvent("startup", "startup_engine_recovery_complete", "info", "Engine recovery from Redis complete", {})
+
+    // Step 9: Recover any engines that were running before restart
+    console.log(`[v0] [Startup] Step 9/9: Recovering engine state from Redis...`)
+    await logProgressionEvent("startup", "startup_engine_recovery", "info", "Recovering engine state from Redis", {})
+    await coordinator.recoverEnginesFromRedis()
+    console.log(`[v0] [Startup] ✓ Engine recovery complete\n`)
+    await logProgressionEvent("startup", "startup_engine_recovery_complete", "info", "Engine recovery from Redis complete", {})
 
     console.log(`[v0] [Startup] ========================================`)
     console.log(`[v0] [Startup] ✓ Pre-startup sequence complete`)
     console.log(`[v0] [Startup] ========================================`)
     console.log(`[v0] [Startup] Ready for user interaction`)
     console.log(`[v0] [Startup] ${startedCount} engine(s) running with valid credentials`)
+    console.log(`[v0] [Startup] Active engines: ${coordinator.getActiveEngineCount()}`)
     console.log(`[v0] [Startup] ========================================\n`)
 
     await logProgressionEvent("startup", "startup_complete", "info", "Startup sequence complete - system ready for user interaction", {
       enginesRunning: startedCount,
       totalConnections: allConnections.length,
+      activeEngines: coordinator.getActiveEngineCount(),
       environment: process.env.NODE_ENV || "development"
     })
 
@@ -163,7 +196,8 @@ export async function completeStartup() {
 }
 
 /**
- * Auto-start engines for connections that have valid credentials
+ * Auto-start engines for connections that have valid credentials AND are already enabled
+ * Does NOT auto-enable connections - respects user control
  */
 async function autoStartValidConnections(coordinator: any, allConnections: any[]): Promise<number> {
   let startedCount = 0
@@ -172,31 +206,20 @@ async function autoStartValidConnections(coordinator: any, allConnections: any[]
 
   for (const conn of allConnections) {
     const hasCreds = hasConnectionCredentials(conn, 20, false)
-    if (!hasCreds) {
-      console.log(`[v0] [Startup] Skipping ${conn.id}: no valid credentials`)
+    const isProcessing = isConnectionMainProcessing(conn)
+
+    // Only start engines for connections that are BOTH enabled AND have credentials
+    // Do NOT auto-enable connections that the user hasn't explicitly enabled
+    if (!isProcessing) {
+      console.log(`[v0] [Startup] Skipping ${conn.id}: not enabled for main processing`)
       skippedCount++
       continue
     }
 
-    const isProcessing = isConnectionMainProcessing(conn)
-    if (isProcessing) {
-      console.log(`[v0] [Startup] ${conn.id}: already enabled for processing`)
-      await logProgressionEvent("startup", "startup_engine_already_running", "info", `Engine already running for ${conn.id}`, {
-        connectionId: conn.id,
-        exchange: conn.exchange
-      })
-    } else {
-      console.log(`[v0] [Startup] Enabling ${conn.id} for processing (has valid credentials)`)
-      await updateConnection(conn.id, {
-        is_active_inserted: "1",
-        is_enabled_dashboard: "1",
-        is_active: "1",
-        updated_at: new Date().toISOString(),
-      })
-      await logProgressionEvent("startup", "startup_engine_enabled", "info", `Enabled connection ${conn.id} for processing`, {
-        connectionId: conn.id,
-        exchange: conn.exchange
-      })
+    if (!hasCreds) {
+      console.log(`[v0] [Startup] Skipping ${conn.id}: no valid credentials`)
+      skippedCount++
+      continue
     }
 
     try {

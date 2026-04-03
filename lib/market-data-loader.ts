@@ -9,7 +9,6 @@
  */
 
 import { getClient, initRedis, getAllConnections } from "@/lib/redis-db"
-import { createExchangeConnector } from "@/lib/exchange-connectors"
 import { logProgressionEvent } from "@/lib/engine-progression-logs"
 
 export interface MarketDataCandle {
@@ -444,6 +443,7 @@ async function fetchRealMarketData(
     // Try each connection until we get data
     for (const conn of validConnections) {
       try {
+        const { createExchangeConnector } = await import("@/lib/exchange-connectors")
         const connector = await createExchangeConnector(
           conn.exchange,
           {

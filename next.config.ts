@@ -10,6 +10,14 @@ const nextConfig: NextConfig = {
         crypto: false,
         stream: false,
         buffer: false,
+        fs: false,
+        net: false,
+        tls: false,
+        path: false,
+        os: false,
+        http: false,
+        https: false,
+        zlib: false,
       }
     }
     return config

@@ -10,7 +10,6 @@ import { StrategyProcessor } from "./strategy-processor"
 import { PseudoPositionManager } from "./pseudo-position-manager"
 import { RealtimeProcessor } from "./realtime-processor"
 import { logProgressionEvent } from "@/lib/engine-progression-logs"
-import { loadMarketDataForEngine } from "@/lib/market-data-loader"
 import { ProgressionStateManager } from "@/lib/progression-state-manager"
 import { engineMonitor } from "@/lib/engine-performance-monitor"
 import { ConfigSetProcessor } from "./config-set-processor"
@@ -142,6 +141,7 @@ export class TradeEngineManager {
       })
 
       console.log(`[v0] [EngineManager] Loaded ${symbols.length} symbols for connection: ${symbols.join(", ")}`)
+      const { loadMarketDataForEngine } = await import("@/lib/market-data-loader")
       const loaded = await loadMarketDataForEngine(symbols)
       console.log(`[v0] [EngineManager] Phase 1.5/6: Market data loaded for ${loaded}/${symbols.length} symbols`)
 
@@ -381,6 +381,7 @@ export class TradeEngineManager {
         // Fallback: load minimal market data
         try {
           const fallbackSymbols = ["BTCUSDT", "ETHUSDT"]
+          const { loadMarketDataForEngine } = await import("@/lib/market-data-loader")
           await loadMarketDataForEngine(fallbackSymbols)
           console.log(`[v0] [EngineManager] Fallback market data loaded for ${fallbackSymbols.join(", ")}`)
         } catch (fallbackErr) {
