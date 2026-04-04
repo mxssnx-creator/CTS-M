@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { getActiveConnectionsForEngine, getConnectionTrades, getConnectionPositions, initRedis, getRedisClient } from "@/lib/redis-db"
+import { getAllConnections, getConnectionTrades, getConnectionPositions, initRedis, getRedisClient } from "@/lib/redis-db"
 import { SystemLogger } from "@/lib/system-logger"
 import { ProgressionStateManager } from "@/lib/progression-state-manager"
 
@@ -60,7 +60,6 @@ async function getEngineStatusFromRedis(connectionId: string): Promise<{
 async function lazyInitEngines(): Promise<void> {
   try {
     const { getGlobalTradeEngineCoordinator } = await import("@/lib/trade-engine")
-    const { getAllConnections } = await import("@/lib/redis-db")
     const { loadSettingsAsync } = await import("@/lib/settings-storage")
     
     const coordinator = getGlobalTradeEngineCoordinator()
@@ -106,6 +105,35 @@ async function lazyInitEngines(): Promise<void> {
   }
 }
 
+/**
+ * Determine connection readiness state for progression display
+ */
+function getConnectionReadiness(conn: any): {
+  canStart: boolean
+  status: string
+  missingFlags: string[]
+} {
+  const missingFlags: string[] = []
+  
+  const isInserted = conn.is_inserted === "1" || conn.is_inserted === 1 || conn.is_inserted === true
+  const isDashboardEnabled = conn.is_enabled_dashboard === "1" || conn.is_enabled_dashboard === 1 || conn.is_enabled_dashboard === true
+  const hasApiKey = (conn.api_key || conn.apiKey || "").length > 10
+  const hasApiSecret = (conn.api_secret || conn.apiSecret || "").length > 10
+  
+  if (!isInserted) missingFlags.push("not_added_to_active")
+  if (!isDashboardEnabled) missingFlags.push("not_enabled_on_dashboard")
+  if (!hasApiKey) missingFlags.push("no_api_key")
+  if (!hasApiSecret) missingFlags.push("no_api_secret")
+  
+  const canStart = isInserted && isDashboardEnabled && hasApiKey && hasApiSecret
+  
+  let status = "idle"
+  if (canStart) status = "ready_to_start"
+  if (missingFlags.length === 0) status = "configured"
+  
+  return { canStart, status, missingFlags }
+}
+
 export async function GET() {
   try {
     console.log("[v0] Fetching real-time trade engine progression data")
@@ -114,15 +142,37 @@ export async function GET() {
     // Lazy init: recover engines from Redis if they were running before cold start
     await lazyInitEngines()
     
-    const activeConnections = await getActiveConnectionsForEngine()
+    // Get ALL connections, not just active ones
+    const allConnections = await getAllConnections()
     
-    console.log(`[v0] Processing ${activeConnections.length} active enabled connections`)
+    if (!Array.isArray(allConnections)) {
+      return NextResponse.json({
+        success: true,
+        connections: [],
+        totalConnections: 0,
+        runningEngines: 0,
+        timestamp: new Date().toISOString(),
+      })
+    }
     
-    // Get progression status for each connection with REAL data
+    // Filter to connections that are either:
+    // 1. Active and enabled (running engines)
+    // 2. Have credentials (configured and can be started)
+    // 3. Have engine state in Redis (were running before)
+    const relevantConnections = allConnections.filter((conn) => {
+      const isInserted = conn.is_inserted === "1" || conn.is_inserted === 1 || conn.is_inserted === true
+      const isDashboardEnabled = conn.is_enabled_dashboard === "1" || conn.is_enabled_dashboard === 1 || conn.is_enabled_dashboard === true
+      const hasCredentials = (conn.api_key || conn.apiKey || "").length > 10 && (conn.api_secret || conn.apiSecret || "").length > 10
+      return isInserted || isDashboardEnabled || hasCredentials
+    })
+    
+    console.log(`[v0] Processing ${relevantConnections.length} relevant connections out of ${allConnections.length} total`)
+    
+    // Get progression status for each connection
     const progressionData = await Promise.all(
-      activeConnections.map(async (conn) => {
+      relevantConnections.map(async (conn) => {
         try {
-          console.log(`[v0] Getting progression for ${conn.name}...`)
+          const readiness = getConnectionReadiness(conn)
           
           // Use Redis-based engine status (works across cold starts)
           const redisEngineStatus = await getEngineStatusFromRedis(conn.id)
@@ -138,15 +188,44 @@ export async function GET() {
           }
           
           const isEngineRunning = redisEngineStatus.isRunning || inMemoryEngineStatus !== null
-          const [trades, positions, progressionState] = await Promise.all([
-            getConnectionTrades(conn.id),
-            getConnectionPositions(conn.id),
-            ProgressionStateManager.getProgressionState(conn.id),
-          ])
-
-          const tradeCount = trades.length
-          const pseudoCount = positions.length
-          const engineState = isEngineRunning ? "running" : "idle"
+          
+          // Get trade/position data only for running engines (skip for idle connections)
+          let tradeCount = 0
+          let pseudoCount = 0
+          let progressionState = {
+            cyclesCompleted: 0,
+            successfulCycles: 0,
+            failedCycles: 0,
+            cycleSuccessRate: "0%",
+            totalTrades: 0,
+            successfulTrades: 0,
+            totalProfit: 0,
+            prehistoricCyclesCompleted: 0,
+            lastUpdate: null as Date | null,
+          }
+          
+          if (isEngineRunning) {
+            const [trades, positions, progState] = await Promise.all([
+              getConnectionTrades(conn.id),
+              getConnectionPositions(conn.id),
+              ProgressionStateManager.getProgressionState(conn.id),
+            ])
+            tradeCount = trades.length
+            pseudoCount = positions.length
+            progressionState = {
+              cyclesCompleted: progState.cyclesCompleted || 0,
+              successfulCycles: progState.successfulCycles || 0,
+              failedCycles: progState.failedCycles || 0,
+              cycleSuccessRate: String(progState.cycleSuccessRate || "0%"),
+              totalTrades: progState.totalTrades || 0,
+              successfulTrades: progState.successfulTrades || 0,
+              totalProfit: progState.totalProfit || 0,
+              prehistoricCyclesCompleted: progState.prehistoricCyclesCompleted || 0,
+              lastUpdate: progState.lastUpdate || null,
+            }
+          }
+          
+          const engineState = isEngineRunning ? "running" : readiness.status
           const updatedAt = progressionState.lastUpdate?.toISOString?.() || null
           const prehistoricLoaded = (progressionState.prehistoricCyclesCompleted || 0) > 0
           
@@ -169,6 +248,7 @@ export async function GET() {
             isLiveTrading: conn.is_live_trade,
             isEngineRunning,
             engineState,
+            readiness,
             tradeCount,
             pseudoPositionCount: pseudoCount,
             prehistoricDataLoaded: prehistoricLoaded,
@@ -183,7 +263,7 @@ export async function GET() {
               successfulTrades: progressionState.successfulTrades,
               totalProfit: progressionState.totalProfit,
             },
-            realTimeData: true,
+            realTimeData: isEngineRunning,
           }
         } catch (err) {
           console.warn(`[v0] Failed to get progression for ${conn.id}:`, err)
@@ -208,7 +288,7 @@ export async function GET() {
       })
     )
     
-    console.log(`[v0] Returned real-time progression data for ${progressionData.length} connections`)
+    console.log(`[v0] Returned progression data for ${progressionData.length} connections`)
     return NextResponse.json({
       success: true,
       connections: progressionData,
