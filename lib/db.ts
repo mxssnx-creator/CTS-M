@@ -178,23 +178,109 @@ async function routeQuery(queryText: string, params: any[] = []): Promise<{ rows
       return { rows: parsed, rowCount: parsed.length }
     }
 
-    // ---- SELECT COUNT ----
-    if (upper.includes("SELECT COUNT")) {
+    // ---- AGGREGATE FUNCTIONS: SELECT COUNT / SUM / AVG / GROUP BY ----
+    if (upper.includes("SELECT COUNT") || upper.includes("SELECT SUM") || upper.includes("SELECT AVG") || upper.includes("GROUP BY")) {
       const tableMatch = upper.match(/FROM\s+(\w+)/i)
+      const groupMatch = upper.match(/GROUP BY\s+(\w+)/i)
+      
       if (tableMatch) {
         const client = getRedisClient()
         const table = tableMatch[1].toLowerCase()
-        const keys = await client.smembers(table)
-        return { rows: [{ count: keys.length }], rowCount: 1 }
+        const ids = await client.smembers(table)
+        
+        // Load all items
+        const items: any[] = []
+        for (const id of ids) {
+          const item = await client.hgetall(`${table}:${id}`)
+          if (item && Object.keys(item).length > 0) {
+            // Parse numeric fields
+            const parsed: any = { id }
+            for (const [k, v] of Object.entries(item)) {
+              parsed[k] = !isNaN(Number(v)) && v !== '' ? Number(v) : v
+            }
+            items.push(parsed)
+          }
+        }
+        
+        // Handle GROUP BY
+        if (groupMatch) {
+          const groupField = groupMatch[1].toLowerCase()
+          const grouped: Record<string, any[]> = {}
+          
+          for (const item of items) {
+            const key = String(item[groupField] || 'unknown')
+            if (!grouped[key]) grouped[key] = []
+            grouped[key].push(item)
+          }
+          
+          // Extract aggregate functions
+          const result: any[] = []
+          for (const [groupValue, groupItems] of Object.entries(grouped)) {
+            const row: any = { [groupField]: groupValue }
+            
+            // COUNT
+            if (upper.includes("COUNT(")) row.count = groupItems.length
+            
+            // SUM
+            const sumMatch = upper.match(/SUM\(\s*([^)]+)\s*\)/i)
+            if (sumMatch) {
+              const sumField = sumMatch[1].toLowerCase()
+              row[sumField] = groupItems.reduce((sum, i) => sum + (Number(i[sumField]) || 0), 0)
+            }
+            
+            // AVG
+            const avgMatch = upper.match(/AVG\(\s*([^)]+)\s*\)/i)
+            if (avgMatch) {
+              const avgField = avgMatch[1].toLowerCase()
+              const values = groupItems.map(i => Number(i[avgField]) || 0).filter(v => v !== 0)
+              row[avgField] = values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : 0
+            }
+            
+            result.push(row)
+          }
+          
+          return { rows: result, rowCount: result.length }
+        }
+        
+        // Simple COUNT without grouping
+        if (upper.includes("SELECT COUNT")) {
+          return { rows: [{ count: items.length }], rowCount: 1 }
+        }
+        
+        // Simple SUM / AVG
+        if (upper.includes("SELECT SUM") || upper.includes("SELECT AVG")) {
+          const row: any = {}
+          
+          if (upper.includes("SUM(")) {
+            const sumMatch = upper.match(/SUM\(\s*([^)]+)\s*\)/i)
+            if (sumMatch) {
+              const sumField = sumMatch[1].toLowerCase()
+              row[sumField] = items.reduce((sum, i) => sum + (Number(i[sumField]) || 0), 0)
+            }
+          }
+          
+          if (upper.includes("AVG(")) {
+            const avgMatch = upper.match(/AVG\(\s*([^)]+)\s*\)/i)
+            if (avgMatch) {
+              const avgField = avgMatch[1].toLowerCase()
+              const values = items.map(i => Number(i[avgField]) || 0).filter(v => v !== 0)
+              row[avgField] = values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : 0
+            }
+          }
+          
+          return { rows: [row], rowCount: 1 }
+        }
       }
+      
       return { rows: [{ count: 0 }], rowCount: 1 }
     }
 
     // ---- INSERT INTO ----
     if (upper.startsWith("INSERT")) {
-      const tableMatch = upper.match(/INTO\s+(\w+)/i)
+      const tableMatch = upper.match(/INTO\s+(\w+)\s*\(([^)]+)\)/i)
       if (tableMatch) {
         const table = tableMatch[1].toLowerCase()
+        const columns = tableMatch[2].split(',').map(c => c.trim().toLowerCase())
         const id = params[0] || nanoid()
         const client = getRedisClient()
         
@@ -204,14 +290,64 @@ async function routeQuery(queryText: string, params: any[] = []): Promise<{ rows
           }
         } else {
           await client.sadd(table, String(id))
+          
+          // Store all column values as Redis hash fields
+          if (columns.length > 0 && params.length > 0) {
+            const hashData: Record<string, string> = {}
+            
+            for (let i = 0; i < Math.min(columns.length, params.length); i++) {
+              const key = columns[i]
+              const value = params[i]
+              hashData[key] = typeof value === 'object' ? JSON.stringify(value) : String(value)
+            }
+            
+            // Add timestamps
+            hashData.created_at = new Date().toISOString()
+            hashData.updated_at = new Date().toISOString()
+            
+            await client.hset(`${table}:${id}`, hashData)
+            
+            // Set TTL for statistics tables to prevent unbounded growth
+            if (['indications', 'strategies_real', 'pseudo_positions', 'trades', 'orders'].includes(table)) {
+              await client.expire(`${table}:${id}`, 172800) // 48 hours
+            }
+          }
         }
         return { rows: [{ id, created_at: new Date().toISOString() }], rowCount: 1 }
       }
+      
+      // Fallback simple INSERT without column definition
+      const simpleMatch = upper.match(/INTO\s+(\w+)/i)
+      if (simpleMatch) {
+        const table = simpleMatch[1].toLowerCase()
+        const id = params[0] || nanoid()
+        const client = getRedisClient()
+        await client.sadd(table, String(id))
+        return { rows: [{ id, created_at: new Date().toISOString() }], rowCount: 1 }
+      }
+      
       return { rows: [], rowCount: 0 }
     }
 
     // ---- UPDATE ----
     if (upper.startsWith("UPDATE")) {
+      const tableMatch = upper.match(/UPDATE\s+(\w+)/i)
+      const setMatch = upper.match(/SET\s+([^WHERE]+)/i)
+      const whereMatch = upper.match(/WHERE\s+([^;]+)/i)
+      
+      if (tableMatch && setMatch) {
+        const table = tableMatch[1].toLowerCase()
+        const client = getRedisClient()
+        
+        if (whereMatch) {
+          const id = params[params.length - 1]
+          if (id) {
+            await client.hset(`${table}:${id}`, { updated_at: new Date().toISOString() })
+            return { rows: [], rowCount: 1 }
+          }
+        }
+      }
+      
       return { rows: [], rowCount: 1 }
     }
 
