@@ -13,7 +13,7 @@ import Link from "next/link"
 
 export default function PortfolioDetailPage() {
   const params = useParams()
-  const portfolioId = Number.parseInt(params.id as string)
+  const portfolioId = params?.id ? Number.parseInt(params.id as string) : 0
 
   const [metrics, setMetrics] = useState<any>(null)
   const [riskLimits, setRiskLimits] = useState<any>(null)
