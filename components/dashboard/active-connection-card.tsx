@@ -142,6 +142,48 @@ export function ActiveConnectionCard({
     }
   }, [connection.connectionId, connection.exchangeName])
 
+  // Send configuration updates to running engine
+  const sendConfigUpdate = useCallback(async (config: {
+    liveVolumeFactor?: number
+    presetVolumeFactor?: number
+    orderType?: string
+    volumeType?: string
+  }) => {
+    try {
+      await fetch('/api/trade-engine/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          connectionId: connection.connectionId,
+          ...config
+        })
+      })
+    } catch (error) {
+      console.error('Failed to send config update:', error)
+    }
+  }, [connection.connectionId])
+
+  // Wrapped state setters that also update engine
+  const handleLiveVolumeChange = useCallback((value: number) => {
+    setLiveVolumeFactor(value)
+    sendConfigUpdate({ liveVolumeFactor: value })
+  }, [sendConfigUpdate])
+
+  const handlePresetVolumeChange = useCallback((value: number) => {
+    setPresetVolumeFactor(value)
+    sendConfigUpdate({ presetVolumeFactor: value })
+  }, [sendConfigUpdate])
+
+  const handleOrderTypeChange = useCallback((value: "market" | "limit") => {
+    setOrderType(value)
+    sendConfigUpdate({ orderType: value })
+  }, [sendConfigUpdate])
+
+  const handleVolumeTypeChange = useCallback((value: "usdt" | "contract") => {
+    setVolumeType(value)
+    sendConfigUpdate({ volumeType: value })
+  }, [sendConfigUpdate])
+
   useEffect(() => {
     fetchProgression()
     const interval = setInterval(
@@ -580,12 +622,12 @@ export function ActiveConnectionCard({
               <VolumeConfigurationPanel
                 liveVolumeFactor={liveVolumeFactor}
                 presetVolumeFactor={presetVolumeFactor}
-                onLiveVolumeChange={setLiveVolumeFactor}
-                onPresetVolumeChange={setPresetVolumeFactor}
+                onLiveVolumeChange={handleLiveVolumeChange}
+                onPresetVolumeChange={handlePresetVolumeChange}
                 orderType={orderType}
-                onOrderTypeChange={setOrderType}
+                onOrderTypeChange={handleOrderTypeChange}
                 volumeType={volumeType}
-                onVolumeTypeChange={setVolumeType}
+                onVolumeTypeChange={handleVolumeTypeChange}
               />
 
               <Separator />
