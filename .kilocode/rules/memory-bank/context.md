@@ -2,7 +2,7 @@
 
 ## Current State
 
-**Template Status**: ✅ Ready for development
+**Template Status**: ✅ Extended with production-facing trading dashboard fixes
 
 The template is a clean Next.js 16 starter with TypeScript and Tailwind CSS 4. It's ready for AI-assisted expansion to build any type of application.
 
@@ -14,6 +14,7 @@ The template is a clean Next.js 16 starter with TypeScript and Tailwind CSS 4. I
 - [x] ESLint configuration
 - [x] Memory bank documentation
 - [x] Recipe system for common features
+- [x] Connection card now includes detailed log dialog and compact log overview
 
 ## Current Structure
 
@@ -23,14 +24,15 @@ The template is a clean Next.js 16 starter with TypeScript and Tailwind CSS 4. I
 | `src/app/layout.tsx` | Root layout | ✅ Ready |
 | `src/app/globals.css` | Global styles | ✅ Ready |
 | `.kilocode/` | AI context & recipes | ✅ Ready |
+| `components/settings/connection-card.tsx` | Connection UI + logs | ✅ Updated |
 
 ## Current Focus
 
-The template is ready. Next steps depend on user requirements:
+The template is ready. Trading dashboard and connection log presentation were improved for progression visibility:
 
-1. What type of application to build
-2. What features are needed
-3. Design/branding preferences
+1. Additional production engine fixes and endpoint hardening
+2. Broader statistics/DB verification on real data paths
+3. Further log categorization and operational dashboards
 
 ## Quick Start Guide
 
@@ -85,3 +87,4 @@ export async function GET() {
 | Date | Changes |
 |------|---------|
 | Initial | Template created with base setup |
+| 2026-04-09 | Added detailed connection log dialog and compact log summary for engine progression visibility |

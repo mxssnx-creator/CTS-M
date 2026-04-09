@@ -15,6 +15,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog"
+import { ScrollArea } from "@/components/ui/scroll-area"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
@@ -65,6 +66,7 @@ export function ConnectionCard({
   const [workingStatus, setWorkingStatus] = useState<"idle" | "testing" | "success" | "error">("idle")
   const [testLogs, setTestLogs] = useState<string[]>([])
   const [showTestLogInstant, setShowTestLogInstant] = useState(false)
+  const [showDetailedLogs, setShowDetailedLogs] = useState(false)
   const [showSecrets, setShowSecrets] = useState(false)
   const [logsExpanded, setLogsExpanded] = useState(false)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
@@ -313,6 +315,19 @@ export function ConnectionCard({
   const credentialsConfigured =
     connection.api_key && connection.api_key !== "" && !connection.api_key.includes("PLACEHOLDER")
 
+  const logSummary = {
+    total: testLogs.length,
+    errors: testLogs.filter((line) => /error|fail|deny|invalid/i.test(line)).length,
+    warnings: testLogs.filter((line) => /warn|retry|slow/i.test(line)).length,
+    successes: testLogs.filter((line) => /success|ready|connected|ok/i.test(line)).length,
+  }
+
+  const openLogs = () => {
+    setLogsExpanded(true)
+    setShowDetailedLogs(true)
+    onShowLogs?.()
+  }
+
   return (
     <>
       <Card className="border border-border p-6">
@@ -446,13 +461,13 @@ export function ConnectionCard({
 
             <div className="flex items-center gap-2">
               {(showTestLogInstant || testLogs.length > 0 || (connection.last_test_log && connection.last_test_log.length > 0)) && (
-                <Button
-                  size="sm"
-                  variant={logsExpanded ? "default" : "outline"}
-                  onClick={() => setLogsExpanded(!logsExpanded)}
-                  className="flex items-center gap-2 text-xs h-8"
-                  title={logsExpanded ? "Hide test logs" : "Show test logs"}
-                >
+              <Button
+                size="sm"
+                variant={logsExpanded ? "default" : "outline"}
+                onClick={openLogs}
+                className="flex items-center gap-2 text-xs h-8"
+                title={logsExpanded ? "Hide test logs" : "Show test logs"}
+              >
                   <ChevronDown className={`h-3 w-3 transition-transform ${logsExpanded ? "rotate-180" : ""}`} />
                   <span className="font-medium">Logs ({testLogs.length > 0 ? testLogs.length : (Array.isArray(connection.last_test_log) ? connection.last_test_log.length : 0)} lines)</span>
                 </Button>
@@ -835,6 +850,36 @@ export function ConnectionCard({
               )}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showDetailedLogs} onOpenChange={setShowDetailedLogs}>
+        <DialogContent className="max-w-5xl max-h-[92vh] flex flex-col overflow-hidden">
+          <DialogHeader>
+            <DialogTitle>Connection Logs</DialogTitle>
+            <DialogDescription>
+              Detailed overview of connection progressions, engine states, data handling, and categorized errors.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3 md:grid-cols-4">
+            <Card className="p-4"><div className="text-xs text-muted-foreground">State</div><div className="text-lg font-semibold">{workingStatus}</div></Card>
+            <Card className="p-4"><div className="text-xs text-muted-foreground">Entries</div><div className="text-lg font-semibold">{logSummary.total}</div></Card>
+            <Card className="p-4"><div className="text-xs text-muted-foreground">Warnings</div><div className="text-lg font-semibold">{logSummary.warnings}</div></Card>
+            <Card className="p-4"><div className="text-xs text-muted-foreground">Errors</div><div className="text-lg font-semibold">{logSummary.errors}</div></Card>
+          </div>
+          <ScrollArea className="mt-4 h-[60vh] rounded-md border border-border/60 p-4">
+            <div className="space-y-2 text-xs font-mono">
+              {(testLogs.length > 0 ? testLogs : (connection.last_test_log || [])).length === 0 ? (
+                <div className="text-muted-foreground">No logs available.</div>
+              ) : (
+                (testLogs.length > 0 ? testLogs : (connection.last_test_log || [])).map((line: string, i: number) => (
+                  <div key={`${i}-${line}`} className="rounded-md border border-border/50 bg-muted/30 p-3 leading-5">
+                    {line || " "}
+                  </div>
+                ))
+              )}
+            </div>
+          </ScrollArea>
         </DialogContent>
       </Dialog>
     </>
