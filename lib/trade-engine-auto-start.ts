@@ -266,6 +266,7 @@ function startConnectionMonitoring(): void {
       if (enabledConnections.length > 0 && !globalRunning) {
         try {
           const coordinator = getGlobalTradeEngineCoordinator()
+          await coordinator.refreshEngines()
           await coordinator.startAll()
         } catch (startError) {
           console.warn("[v0] [Monitor] Failed to auto-start coordinator:", startError)

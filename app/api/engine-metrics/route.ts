@@ -4,30 +4,26 @@ import { IndicationEvaluator } from "@/lib/indication-evaluator"
 import { StrategyEvaluator } from "@/lib/strategy-evaluator"
 import { MetricsAggregator } from "@/lib/metrics-aggregator"
 import { getEngineLogger } from "@/lib/engine-logger"
+import { loadConnections } from "@/lib/file-storage"
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const connectionId = searchParams.get("connectionId")
 
-    if (!connectionId) {
-      return NextResponse.json(
-        { error: "connectionId is required" },
-        { status: 400 }
-      )
-    }
+    const resolvedConnectionId = connectionId || loadConnections().find((c: any) => c.is_enabled || c.is_active || c.is_enabled_dashboard || c.is_live_trade)?.id || "demo-mode"
 
-    const progressManager = getProgressManager(connectionId)
-    const logger = getEngineLogger(connectionId)
+    const progressManager = getProgressManager(resolvedConnectionId)
+    const logger = getEngineLogger(resolvedConnectionId)
     
     // Create evaluators (in real implementation, these would be shared instances)
-    const indicationEvaluator = new IndicationEvaluator(connectionId)
-    const strategyEvaluator = new StrategyEvaluator(connectionId)
-    const metricsAggregator = new MetricsAggregator(connectionId, indicationEvaluator, strategyEvaluator, logger)
+    const indicationEvaluator = new IndicationEvaluator(resolvedConnectionId)
+    const strategyEvaluator = new StrategyEvaluator(resolvedConnectionId)
+    const metricsAggregator = new MetricsAggregator(resolvedConnectionId, indicationEvaluator, strategyEvaluator, logger)
 
     const uiMetrics = await metricsAggregator.getUIMetrics()
 
-    return NextResponse.json({ metrics: uiMetrics })
+    return NextResponse.json({ metrics: uiMetrics, connectionId: resolvedConnectionId, fallbackUsed: !connectionId })
   } catch (error) {
     console.error("[EngineMetrics] Error:", error)
     return NextResponse.json(

@@ -176,7 +176,7 @@ export async function POST(request: Request) {
         
         const testResult = await Promise.race([
           connector.testConnection(),
-          new Promise((_, reject) => setTimeout(() => reject(new Error("Test timeout (30s)")), 30000))
+          new Promise((_, reject) => setTimeout(() => reject(new Error("Test timeout (12s)")), 12000))
         ]) as any
         
         testDuration = Date.now() - testStart
@@ -506,6 +506,8 @@ export async function POST(request: Request) {
         totalDurationMs: overallStats.totalDuration,
       },
       status: hasCredentials ? "ready_with_credentials" : "ready_without_credentials",
+      quickstartSymbol: symbols[0] || null,
+      engineStarted: Boolean(isAssigned && isMainEnabled),
       nextSteps: hasCredentials 
         ? "Connection assigned and enabled in Main Connections. Engine startup initiated."
         : "Connection assigned and enabled for quickstart, but credentials are missing/invalid for live exchange operations.",

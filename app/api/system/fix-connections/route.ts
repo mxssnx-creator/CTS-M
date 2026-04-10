@@ -38,6 +38,7 @@ export async function POST() {
         is_predefined: "1",
         connection_method: "library",
         is_live_trade: conn === "bybit-x03" || conn === "bingx-x01" ? "1" : "0",
+        is_assigned: "1",
         updated_at: new Date().toISOString(),
       }
       
