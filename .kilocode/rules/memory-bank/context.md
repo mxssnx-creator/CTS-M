@@ -25,6 +25,8 @@ The template is a clean Next.js 16 starter with TypeScript and Tailwind CSS 4. I
 - [x] Real Strategy Sets now select from Main Sets where profitfactor > threshold
 - [x] Strategy coordinator now enforces per-config-per-direction base set intake of 1 and derives counts from evaluated sets instead of pseudo-position volume
 - [x] Live trading selection now ranks real strategies and caps executable positions at 500 best candidates
+- [x] Per-set pseudo position limiting is now keyed independently by symbol + config combination + direction to avoid cross-set blocking
+- [x] Comprehensive dev test run completed; current failures are in legacy Redis verification methods and several timeout-prone API endpoints, not in typecheck/lint
 
 ## Current Structure
 
@@ -51,6 +53,7 @@ The template is ready. Trading dashboard and connection log presentation were im
 4. Unified metrics derivation across monitoring, quickstart dialogs, and connection log summaries
 5. Strategy engine improvements with stricter profit factor requirements
 6. Prioritized live set selection with 500-position cap for real trading
+7. Investigating legacy verification/API timeout failures surfaced by comprehensive dev testing
 
 ## Quick Start Guide
 
@@ -109,3 +112,4 @@ export async function GET() {
 | 2026-04-10 | Fixed systemwide count reconciliation for progression/log dialogs and updated dev test scripts to avoid spawning local dev servers |
 | 2026-04-10 | Strategy engine updates: profit factor thresholds (base 1.2, main 1.4), position limits per direction, Sets-based counting, max 250 entries with threshold rearrangement |
 | 2026-04-10 | Refined strategy set flow: base intake limited per config+direction, main/real chained by set survivors, set counts based on evaluated sets, live trading capped to top 500 |
+| 2026-04-10 | Confirmed per-set pseudo position independence via symbol+config+direction identity and ran comprehensive dev test suite; failures point to unrelated Redis verification method gaps and API timeouts |

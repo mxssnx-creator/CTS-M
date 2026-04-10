@@ -140,8 +140,8 @@ export class StrategyCoordinator {
     for (const indication of indications) {
       const direction = this.normalizeDirection(indication)
       const configKey = this.getConfigKey(indication)
-      const setKey = `${configKey}:${direction}`
-      const existingCount = setCounts.get(setKey) || 0
+      const setIdentity = this.getPerSetIdentity(symbol, configKey, direction)
+      const existingCount = setCounts.get(setIdentity) || 0
       if (existingCount >= perDirectionConfigLimit) {
         continue
       }
@@ -157,11 +157,12 @@ export class StrategyCoordinator {
         confidence: indication.confidence || 0.5, // Set confidence from indication or default
         direction,
         configKey,
+        setKey: setIdentity,
         created: new Date()
       }
 
       baseStrategies.push(strategy)
-      setCounts.set(setKey, existingCount + 1)
+      setCounts.set(setIdentity, existingCount + 1)
     }
 
     const totalCreated = baseStrategies.length
@@ -437,5 +438,9 @@ export class StrategyCoordinator {
       timeframe: indication.timeframe ?? indication.metadata?.timeframe ?? "na",
       source: indication.source ?? indication.metadata?.source ?? "na",
     })
+  }
+
+  private getPerSetIdentity(symbol: string, configKey: string, direction: string): string {
+    return `${symbol}:${configKey}:${direction}`
   }
 }
