@@ -73,6 +73,7 @@ export async function GET() {
     
     let totalIndicationCycles = 0
     let totalStrategyCycles = 0
+    let totalRealtimeCycles = 0
     let indicationsRunning = false
     let strategiesRunning = false
     let redisActiveEngineCount = 0
@@ -86,6 +87,7 @@ export async function GET() {
             const state = JSON.parse(stateStr)
             totalIndicationCycles += Number(state.indication_cycle_count) || 0
             totalStrategyCycles += Number(state.strategy_cycle_count) || 0
+            totalRealtimeCycles += Number(state.realtime_cycle_count) || 0
             if (state.status === "running") {
               indicationsRunning = true
               strategiesRunning = true
@@ -142,18 +144,23 @@ export async function GET() {
         coordinator: engineRunning || coordinatorEngineCount > 0,
         logger: true,
       },
-      engines: {
-        indications: {
-          running: indicationsEngineRunning,
-          cycleCount: totalIndicationCycles,
-          resultsCount: indicationKeys,
+        engines: {
+          indications: {
+            running: indicationsEngineRunning,
+            cycleCount: totalIndicationCycles,
+            resultsCount: indicationKeys,
+          },
+          strategies: {
+            running: strategiesEngineRunning,
+            cycleCount: totalStrategyCycles,
+            resultsCount: strategyKeys,
+          },
+          realtime: {
+            running: engineRunning,
+            cycleCount: totalRealtimeCycles,
+            resultsCount: Math.max(indicationKeys, strategyKeys),
+          },
         },
-        strategies: {
-          running: strategiesEngineRunning,
-          cycleCount: totalStrategyCycles,
-          resultsCount: strategyKeys,
-        },
-      },
       timestamp: new Date().toISOString(),
     })
   } catch (error) {
@@ -170,6 +177,7 @@ export async function GET() {
         engines: {
           indications: { running: false, cycleCount: 0, resultsCount: 0 },
           strategies: { running: false, cycleCount: 0, resultsCount: 0 },
+          realtime: { running: false, cycleCount: 0, resultsCount: 0 },
         },
         error: "Failed to fetch metrics", 
         details: error instanceof Error ? error.message : "Unknown" 

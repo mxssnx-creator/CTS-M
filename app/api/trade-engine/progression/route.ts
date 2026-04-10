@@ -159,11 +159,13 @@ export async function GET() {
     // 1. Active and enabled (running engines)
     // 2. Have credentials (configured and can be started)
     // 3. Have engine state in Redis (were running before)
+    // 4. Are visible in dashboard but still need lazy recovery
     const relevantConnections = allConnections.filter((conn) => {
       const isInserted = conn.is_inserted === "1" || conn.is_inserted === 1 || conn.is_inserted === true
       const isDashboardEnabled = conn.is_enabled_dashboard === "1" || conn.is_enabled_dashboard === 1 || conn.is_enabled_dashboard === true
       const hasCredentials = (conn.api_key || conn.apiKey || "").length > 10 && (conn.api_secret || conn.apiSecret || "").length > 10
-      return isInserted || isDashboardEnabled || hasCredentials
+      const hasAnyEngineHints = Boolean(conn.is_live_trade || conn.is_active || conn.is_enabled)
+      return isInserted || isDashboardEnabled || hasCredentials || hasAnyEngineHints
     })
     
     console.log(`[v0] Processing ${relevantConnections.length} relevant connections out of ${allConnections.length} total`)
@@ -204,7 +206,7 @@ export async function GET() {
             lastUpdate: null as Date | null,
           }
           
-          if (isEngineRunning) {
+          if (isEngineRunning || readiness.canStart) {
             const [trades, positions, progState] = await Promise.all([
               getConnectionTrades(conn.id),
               getConnectionPositions(conn.id),
@@ -222,6 +224,13 @@ export async function GET() {
               totalProfit: progState.totalProfit || 0,
               prehistoricCyclesCompleted: progState.prehistoricCyclesCompleted || 0,
               lastUpdate: progState.lastUpdate || null,
+            }
+            if (!isEngineRunning && readiness.canStart) {
+              progressionState = {
+                ...progressionState,
+                cyclesCompleted: Math.max(progressionState.cyclesCompleted, progState.cyclesCompleted || 0),
+                prehistoricCyclesCompleted: Math.max(progressionState.prehistoricCyclesCompleted, progState.prehistoricCyclesCompleted || 0),
+              }
             }
           }
           
@@ -263,7 +272,7 @@ export async function GET() {
               successfulTrades: progressionState.successfulTrades,
               totalProfit: progressionState.totalProfit,
             },
-            realTimeData: isEngineRunning,
+            realTimeData: isEngineRunning || readiness.canStart,
           }
         } catch (err) {
           console.warn(`[v0] Failed to get progression for ${conn.id}:`, err)

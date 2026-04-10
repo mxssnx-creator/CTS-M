@@ -162,7 +162,7 @@ class ComprehensiveTestRunner {
     console.log('🔧 Starting Next.js dev server...')
 
     return new Promise((resolve) => {
-      this.devProcess = spawn('bun', ['run', 'dev'], {
+        this.devProcess = spawn('bun', ['run', 'dev'], {
         stdio: ['inherit', 'pipe', 'pipe'],
         cwd: process.cwd(),
         env: { ...process.env, NODE_ENV: 'development' }
@@ -618,6 +618,7 @@ class ComprehensiveTestRunner {
       this.results.push(await this.testProcessingMetrics())
       this.results.push(await this.testEngineMetrics())
       this.results.push(await this.testTradeEngineQuickStart())
+      this.results.push(await this.testTradeEngineProgression())
 
       // 4. Monitor system for 1 minute after prehistoric processing
       console.log('\n⏱️ Starting 1-minute realtime monitoring...\n')
@@ -639,6 +640,26 @@ class ComprehensiveTestRunner {
       this.displayResults(this.results)
     } finally {
       this.stopDevServer()
+    }
+  }
+
+  private async testTradeEngineProgression(): Promise<TestResult> {
+    const startTime = Date.now()
+    try {
+      const result = await this.makeRequest('/api/trade-engine/progression')
+      return {
+        section: 'Trade Engine Progression',
+        status: result.success ? 'PASS' : 'FAIL',
+        data: result,
+        duration: Date.now() - startTime
+      }
+    } catch (error) {
+      return {
+        section: 'Trade Engine Progression',
+        status: 'FAIL',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        duration: Date.now() - startTime
+      }
     }
   }
 }

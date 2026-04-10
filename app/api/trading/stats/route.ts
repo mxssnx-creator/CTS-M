@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { loadConnections } from "@/lib/file-storage"
 import { SystemLogger } from "@/lib/system-logger"
 import { query } from "@/lib/db"
+import { getConnectionTrades, getConnectionPositions, initRedis } from "@/lib/redis-db"
 
 export async function GET() {
   const startTime = Date.now()
@@ -11,6 +12,8 @@ export async function GET() {
     const connections = loadConnections()
     const enabledConnections = connections.filter((c) => c.is_enabled && c.is_live_trade)
     console.log(`[v0] [API] [Trading Stats] Enabled connections: ${enabledConnections.length}`)
+
+    await initRedis()
     
     try {
       const last250Result = await query(
@@ -50,6 +53,19 @@ export async function GET() {
       const duration = Date.now() - startTime
       console.log(`[v0] [API] [Trading Stats] Stats fetched in ${duration}ms - Last250: ${l250?.total || 0}, Last50: ${l50?.total || 0}, Last32h: ${l32?.total || 0}`)
       
+      const tradeStats = await Promise.all(
+        enabledConnections.map(async (connection) => {
+          const [trades, positions] = await Promise.all([
+            getConnectionTrades(connection.id),
+            getConnectionPositions(connection.id),
+          ])
+          return { connectionId: connection.id, trades, positions }
+        }),
+      )
+
+      const aggregatedTrades = tradeStats.flatMap((item) => item.trades)
+      const aggregatedPositions = tradeStats.flatMap((item) => item.positions)
+
       return NextResponse.json({
         last250: {
           total: Number(l250?.total) || 0,
@@ -71,6 +87,18 @@ export async function GET() {
           total: Number(l32?.total) || 0,
           totalProfit: Number(l32?.totalProfit) || 0,
           profitFactor: Number(l32?.profitFactor) || 0,
+        },
+        liveData: {
+          enabledConnections: enabledConnections.length,
+          trades: aggregatedTrades.length,
+          positions: aggregatedPositions.length,
+          totalProfit: aggregatedPositions.reduce((sum, position) => sum + (Number(position.pnl || position.profit || 0) || 0), 0),
+          avgProfitFactor: aggregatedPositions.length > 0
+            ? aggregatedPositions.reduce((sum, position) => sum + (Number(position.profit_factor || 0) || 0), 0) / aggregatedPositions.length
+            : 0,
+          avgDrawdownTime: aggregatedPositions.length > 0
+            ? aggregatedPositions.reduce((sum, position) => sum + (Number(position.drawdown_time || 0) || 0), 0) / aggregatedPositions.length
+            : 0,
         },
       })
     } catch (dbError) {

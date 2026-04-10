@@ -27,8 +27,22 @@ async function testEndpoint(name: string, path: string) {
   }
 }
 
+async function startEngineIfIdle() {
+  try {
+    const status = await testEndpoint("Trade Engine Progression", "/api/trade-engine/progression")
+    if (status && Array.isArray(status.connections)) {
+      const running = status.connections.some((c) => c.isEngineRunning)
+      if (!running) {
+        await fetch(`${BASE_URL}/api/trade-engine/quick-start`, { method: "POST" })
+        await sleep(3000)
+      }
+    }
+  } catch {}
+}
+
 async function runComprehensiveTest() {
   console.log("\n=== COMPREHENSIVE ENGINE VERIFICATION TEST ===\n")
+  await startEngineIfIdle()
 
   // Test 1: System Verification
   console.log("📋 TEST 1: System Verification Endpoint")
