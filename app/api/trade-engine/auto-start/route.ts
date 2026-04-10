@@ -5,15 +5,6 @@ import { SystemLogger } from "@/lib/system-logger"
 export async function POST() {
   try {
     console.log("[v0] Manual trade engine auto-start triggered")
-
-    if (isAutoStartInitialized()) {
-      return NextResponse.json({
-        success: true,
-        message: "Trade engine auto-start is already initialized and running",
-        alreadyRunning: true,
-      })
-    }
-
     await initializeTradeEngineAutoStart()
 
     await SystemLogger.logTradeEngine("Trade engine auto-start manually triggered", "info")
@@ -43,5 +34,6 @@ export async function GET() {
     message: isAutoStartInitialized()
       ? "Trade engine auto-start is active"
       : "Trade engine auto-start is not initialized",
+    previewMode: process.env.NODE_ENV !== "production",
   })
 }

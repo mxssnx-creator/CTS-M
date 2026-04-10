@@ -26,6 +26,8 @@ export async function GET() {
       await initializeTradeEngineAutoStart()
     }
 
+    await fetch(new URL("/api/dev-preview", "http://localhost:3000").toString()).catch(() => null)
+
     await initRedis()
 
     const seedResult = await ensureDefaultExchangesExist()
