@@ -16,6 +16,12 @@ function sanitizeNonNegative(value: unknown): number {
   return Math.max(0, toNumber(value))
 }
 
+function parseBooleanFlag(value: unknown): boolean {
+  if (typeof value === "boolean") return value
+  const normalized = String(value ?? "").toLowerCase()
+  return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "running"
+}
+
 async function countKeys(client: any, patterns: string[]): Promise<number> {
   let total = 0
   for (const pattern of patterns) {
@@ -95,6 +101,80 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       client.info().catch(() => ""),
     ])
 
+    const progressionPrehistoricSymbols = Array.isArray(progressionState.prehistoricSymbolsProcessed)
+      ? progressionState.prehistoricSymbolsProcessed.length
+      : 0
+    const effectiveCyclesCompleted = sanitizeNonNegative(
+      Math.max(
+        progressionState.cyclesCompleted,
+        toNumber(engineState?.indication_cycle_count),
+        toNumber(engineState?.strategy_cycle_count),
+        toNumber(engineState?.realtime_cycle_count),
+      )
+    )
+    const effectiveSuccessfulCycles = sanitizeNonNegative(
+      Math.max(
+        progressionState.successfulCycles,
+        toNumber(engineState?.successful_cycles),
+        toNumber(engineState?.strategy_cycle_count),
+      )
+    )
+    const effectiveFailedCycles = sanitizeNonNegative(
+      Math.max(progressionState.failedCycles, toNumber(engineState?.failed_cycles))
+    )
+    const derivedCycleSuccessRate = effectiveCyclesCompleted > 0
+      ? (effectiveSuccessfulCycles / effectiveCyclesCompleted) * 100
+      : 0
+    const effectivePrehistoricCycles = sanitizeNonNegative(
+      Math.max(progressionState.prehistoricCyclesCompleted || 0, toNumber(engineState?.prehistoric_cycles_completed))
+    )
+    const effectivePrehistoricSymbols = sanitizeNonNegative(
+      Math.max(
+        prehistoricSymbolsSet,
+        progressionState.prehistoricSymbolsProcessedCount || 0,
+        progressionPrehistoricSymbols,
+        toNumber(engineState?.config_set_symbols_processed),
+      )
+    )
+    const effectivePrehistoricCandles = sanitizeNonNegative(
+      Math.max(progressionState.prehistoricCandlesProcessed || 0, toNumber(engineState?.config_set_candles_processed))
+    )
+    const effectiveDirection = sanitizeNonNegative(
+      Math.max(indicationDirectionCount, progressionState.indicationsDirectionCount || 0)
+    )
+    const effectiveMove = sanitizeNonNegative(
+      Math.max(indicationMoveCount, progressionState.indicationsMoveCount || 0)
+    )
+    const effectiveActive = sanitizeNonNegative(
+      Math.max(indicationActiveCount, progressionState.indicationsActiveCount || 0)
+    )
+    const effectiveOptimal = sanitizeNonNegative(
+      Math.max(indicationOptimalCount, progressionState.indicationsOptimalCount || 0)
+    )
+    const effectiveIndicationsCount = sanitizeNonNegative(
+      Math.max(
+        progressionState.indicationsCount || 0,
+        effectiveDirection + effectiveMove + effectiveActive + effectiveOptimal,
+        toNumber(engineState?.indications_count),
+      )
+    )
+    const effectiveStrategyBase = sanitizeNonNegative(
+      Math.max(baseSetCount, progressionState.strategiesBaseTotal || 0, toNumber(engineState?.strategies_base_total))
+    )
+    const effectiveStrategyMain = sanitizeNonNegative(
+      Math.max(mainSetCount, progressionState.strategiesMainTotal || 0, toNumber(engineState?.strategies_main_total))
+    )
+    const effectiveStrategyReal = sanitizeNonNegative(
+      Math.max(realSetCount, progressionState.strategiesRealTotal || 0, toNumber(engineState?.strategies_real_total))
+    )
+    const effectiveStrategiesCount = sanitizeNonNegative(
+      Math.max(
+        progressionState.strategiesCount || 0,
+        effectiveStrategyBase + effectiveStrategyMain + effectiveStrategyReal,
+        toNumber(engineState?.strategies_count),
+      )
+    )
+
     const usedMemoryLine = String(redisMemoryInfo)
       .split("\n")
       .find((line) => line.startsWith("used_memory:"))
@@ -109,44 +189,44 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       structuredLogs,
       structuredLogsCount: structuredLogs.length,
       progressionState: {
-        cyclesCompleted: sanitizeNonNegative(Math.max(progressionState.cyclesCompleted, Number(engineState?.indication_cycle_count || 0))),
-        successfulCycles: sanitizeNonNegative(Math.max(progressionState.successfulCycles, Number(engineState?.strategy_cycle_count || 0))),
-        failedCycles: sanitizeNonNegative(progressionState.failedCycles),
+        cyclesCompleted: effectiveCyclesCompleted,
+        successfulCycles: effectiveSuccessfulCycles,
+        failedCycles: effectiveFailedCycles,
         totalTrades: sanitizeNonNegative(progressionState.totalTrades),
         successfulTrades: sanitizeNonNegative(progressionState.successfulTrades),
         totalProfit: toNumber(progressionState.totalProfit),
-        cycleSuccessRate: sanitizeNonNegative(progressionState.cycleSuccessRate),
+        cycleSuccessRate: sanitizeNonNegative(Math.max(progressionState.cycleSuccessRate, derivedCycleSuccessRate)),
         tradeSuccessRate: sanitizeNonNegative(progressionState.tradeSuccessRate),
         lastCycleTime: progressionState.lastCycleTime,
-        prehistoricCyclesCompleted: sanitizeNonNegative(progressionState.prehistoricCyclesCompleted),
-        prehistoricPhaseActive: progressionState.prehistoricPhaseActive,
+        prehistoricCyclesCompleted: effectivePrehistoricCycles,
+        prehistoricPhaseActive: parseBooleanFlag(progressionState.prehistoricPhaseActive) || parseBooleanFlag(engineState?.prehistoric_phase_active),
         realtimeCycleCount: sanitizeNonNegative(engineState?.realtime_cycle_count),
-        cycleTimeMs: sanitizeNonNegative(engineState?.last_cycle_duration),
+        cycleTimeMs: sanitizeNonNegative(Math.max(progressionState.cycleTimeMs || 0, toNumber(engineState?.last_cycle_duration))),
         intervalsProcessed: sanitizeNonNegative(await client.get(`intervals:${connectionId}:processed_count`).catch(() => 0)),
-        indicationsCount: sanitizeNonNegative(await client.get(`indications:${connectionId}:count`).catch(() => 0)),
-        strategiesCount: sanitizeNonNegative(await client.get(`strategies:${connectionId}:count`).catch(() => 0)),
-        strategyEvaluatedBase: sanitizeNonNegative(await client.get(`strategies:${connectionId}:base:evaluated`).catch(() => 0)),
-        strategyEvaluatedMain: sanitizeNonNegative(await client.get(`strategies:${connectionId}:main:evaluated`).catch(() => 0)),
-        strategyEvaluatedReal: sanitizeNonNegative(await client.get(`strategies:${connectionId}:real:evaluated`).catch(() => 0)),
-        indicationEvaluatedDirection: sanitizeNonNegative(indicationDirectionCount),
-        indicationEvaluatedMove: sanitizeNonNegative(indicationMoveCount),
-        indicationEvaluatedActive: sanitizeNonNegative(indicationActiveCount),
-        indicationEvaluatedOptimal: sanitizeNonNegative(indicationOptimalCount),
-        prehistoricSymbolsProcessed: sanitizeNonNegative(engineState?.config_set_symbols_processed),
-        prehistoricCandlesProcessed: sanitizeNonNegative(engineState?.config_set_candles_processed),
-        prehistoricSymbolsProcessedCount: sanitizeNonNegative(prehistoricSymbolsSet || engineState?.config_set_symbols_processed),
+        indicationsCount: effectiveIndicationsCount,
+        strategiesCount: effectiveStrategiesCount,
+        strategyEvaluatedBase: sanitizeNonNegative(Math.max(progressionState.strategyEvaluatedBase || 0, toNumber(await client.get(`strategies:${connectionId}:base:evaluated`).catch(() => 0)))),
+        strategyEvaluatedMain: sanitizeNonNegative(Math.max(progressionState.strategyEvaluatedMain || 0, toNumber(await client.get(`strategies:${connectionId}:main:evaluated`).catch(() => 0)))),
+        strategyEvaluatedReal: sanitizeNonNegative(Math.max(progressionState.strategyEvaluatedReal || 0, toNumber(await client.get(`strategies:${connectionId}:real:evaluated`).catch(() => 0)))),
+        indicationEvaluatedDirection: effectiveDirection,
+        indicationEvaluatedMove: effectiveMove,
+        indicationEvaluatedActive: effectiveActive,
+        indicationEvaluatedOptimal: effectiveOptimal,
+        prehistoricSymbolsProcessed: effectivePrehistoricSymbols,
+        prehistoricCandlesProcessed: effectivePrehistoricCandles,
+        prehistoricSymbolsProcessedCount: effectivePrehistoricSymbols,
         prehistoricDataSize: sanitizeNonNegative(prehistoricDataKeys),
-        setsBaseCount: sanitizeNonNegative(baseSetCount),
-        setsMainCount: sanitizeNonNegative(mainSetCount),
-        setsRealCount: sanitizeNonNegative(realSetCount),
-        setsTotalCount: sanitizeNonNegative(baseSetCount + mainSetCount + realSetCount),
+        setsBaseCount: effectiveStrategyBase,
+        setsMainCount: effectiveStrategyMain,
+        setsRealCount: effectiveStrategyReal,
+        setsTotalCount: sanitizeNonNegative(effectiveStrategyBase + effectiveStrategyMain + effectiveStrategyReal),
         redisDbEntries: sanitizeNonNegative(redisDbSize),
         redisDbSizeMb: Number(dbSizeMb.toFixed(2)),
         processingCompleteness: {
-          prehistoricLoaded: !!(engineState?.prehistoric_data_loaded === true || engineState?.prehistoric_data_loaded === "1"),
-          indicationsRunning: sanitizeNonNegative(engineState?.indication_cycle_count) > 0,
-          strategiesRunning: sanitizeNonNegative(engineState?.strategy_cycle_count) > 0,
-          realtimeRunning: sanitizeNonNegative(engineState?.realtime_cycle_count) > 0,
+          prehistoricLoaded: parseBooleanFlag(engineState?.prehistoric_data_loaded) || effectivePrehistoricCycles > 0 || effectivePrehistoricSymbols > 0 || effectivePrehistoricCandles > 0,
+          indicationsRunning: sanitizeNonNegative(engineState?.indication_cycle_count) > 0 || effectiveIndicationsCount > 0,
+          strategiesRunning: sanitizeNonNegative(engineState?.strategy_cycle_count) > 0 || effectiveStrategiesCount > 0,
+          realtimeRunning: sanitizeNonNegative(engineState?.realtime_cycle_count) > 0 || effectiveCyclesCompleted > 0,
           hasErrors: sanitizeNonNegative(engineState?.config_set_errors) > 0,
         },
       },

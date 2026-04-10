@@ -15,6 +15,8 @@ The template is a clean Next.js 16 starter with TypeScript and Tailwind CSS 4. I
 - [x] Memory bank documentation
 - [x] Recipe system for common features
 - [x] Connection card now includes detailed log dialog and compact log overview
+- [x] Progression/log overview APIs now reconcile counts from progression state, engine state, and Redis keyspace so dialogs no longer show zeros while data exists
+- [x] Dev comprehensive test scripts no longer try to launch forbidden `dev` processes and now rely on the sandbox runtime safely
 
 ## Current Structure
 
@@ -33,6 +35,7 @@ The template is ready. Trading dashboard and connection log presentation were im
 1. Additional production engine fixes and endpoint hardening
 2. Broader statistics/DB verification on real data paths
 3. Further log categorization and operational dashboards
+4. Unified metrics derivation across monitoring, quickstart dialogs, and connection log summaries
 
 ## Quick Start Guide
 
@@ -88,3 +91,4 @@ export async function GET() {
 |------|---------|
 | Initial | Template created with base setup |
 | 2026-04-09 | Added detailed connection log dialog and compact log summary for engine progression visibility |
+| 2026-04-10 | Fixed systemwide count reconciliation for progression/log dialogs and updated dev test scripts to avoid spawning local dev servers |

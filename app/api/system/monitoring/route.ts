@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { initRedis, getRedisClient } from "@/lib/redis-db"
+import { ProgressionStateManager } from "@/lib/progression-state-manager"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -74,14 +75,24 @@ export async function GET() {
     let totalIndicationCycles = 0
     let totalStrategyCycles = 0
     let totalRealtimeCycles = 0
+    let totalProgressionCycles = 0
+    let totalIndicationResults = 0
+    let totalStrategyResults = 0
     let indicationsRunning = false
     let strategiesRunning = false
     let redisActiveEngineCount = 0
+    const discoveredConnectionIds = new Set<string>()
     
     try {
-      const connectionStateKeys = allKeys.filter((k: string) => k.startsWith("settings:trade_engine_state:"))
+      const connectionStateKeys = allKeys.filter(
+        (k: string) => k.startsWith("settings:trade_engine_state:") || k.startsWith("trade_engine_state:")
+      )
       for (const stateKey of connectionStateKeys) {
         try {
+          const connectionId = stateKey.split(":").pop() || ""
+          if (connectionId) {
+            discoveredConnectionIds.add(connectionId)
+          }
           const stateStr = await client.get(stateKey)
           if (stateStr) {
             const state = JSON.parse(stateStr)
@@ -97,6 +108,35 @@ export async function GET() {
         } catch {}
       }
     } catch {}
+
+    try {
+      const progressionKeys = allKeys.filter((k: string) => k.startsWith("settings:progression:") || k.startsWith("progression:"))
+      for (const progressionKey of progressionKeys) {
+        const connectionId = progressionKey.split(":").pop() || ""
+        if (connectionId) {
+          discoveredConnectionIds.add(connectionId)
+        }
+      }
+    } catch {}
+
+    for (const connectionId of discoveredConnectionIds) {
+      try {
+        const progression = await ProgressionStateManager.getProgressionState(connectionId)
+        totalProgressionCycles += Number(progression.cyclesCompleted) || 0
+        totalIndicationResults +=
+          Number(progression.indicationsCount) ||
+          Number(progression.indicationsDirectionCount) ||
+          Number(progression.indicationsMoveCount) ||
+          Number(progression.indicationsActiveCount) ||
+          Number(progression.indicationsOptimalCount) || 0
+        totalStrategyResults += Number(progression.strategiesCount) || 0
+        totalIndicationCycles = Math.max(totalIndicationCycles, totalProgressionCycles)
+        totalStrategyCycles = Math.max(
+          totalStrategyCycles,
+          Number(progression.strategyEvaluatedBase || 0) + Number(progression.strategyEvaluatedMain || 0) + Number(progression.strategyEvaluatedReal || 0)
+        )
+      } catch {}
+    }
     
     let redisEngineRunning = false
     try {
@@ -147,18 +187,18 @@ export async function GET() {
       engines: {
         indications: {
           running: indicationsEngineRunning,
-          cycleCount: Math.max(totalIndicationCycles, indicationKeys),
-          resultsCount: indicationKeys,
+          cycleCount: Math.max(totalIndicationCycles, totalProgressionCycles, indicationKeys, totalIndicationResults),
+          resultsCount: Math.max(indicationKeys, totalIndicationResults),
         },
         strategies: {
           running: strategiesEngineRunning,
-          cycleCount: Math.max(totalStrategyCycles, strategyKeys),
-          resultsCount: strategyKeys,
+          cycleCount: Math.max(totalStrategyCycles, strategyKeys, totalStrategyResults),
+          resultsCount: Math.max(strategyKeys, totalStrategyResults),
         },
         realtime: {
           running: engineRunning,
-          cycleCount: Math.max(totalRealtimeCycles, keys > 0 ? 1 : 0),
-          resultsCount: Math.max(indicationKeys, strategyKeys),
+          cycleCount: Math.max(totalRealtimeCycles, totalProgressionCycles, keys > 0 ? 1 : 0),
+          resultsCount: Math.max(indicationKeys, strategyKeys, totalIndicationResults, totalStrategyResults),
         },
       },
       timestamp: new Date().toISOString(),

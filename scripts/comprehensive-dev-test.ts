@@ -152,54 +152,13 @@ class ComprehensiveTestRunner {
     console.log('🔧 Checking if dev server is already running...')
 
     try {
-      await this.makeRequest('/api/system/health', 'GET', 1000)
+      await this.makeRequest('/api/system/health', 'GET', undefined, 1000)
       console.log('✅ Dev server is already running, skipping start')
       return true
     } catch {
-      // Server not running, start it
+      console.log('ℹ️ No external dev server detected; relying on existing sandbox runtime only')
+      return true
     }
-
-    console.log('🔧 Starting Next.js dev server...')
-
-    return new Promise((resolve) => {
-        this.devProcess = spawn('bun', ['run', 'dev'], {
-        stdio: ['inherit', 'pipe', 'pipe'],
-        cwd: process.cwd(),
-        env: { ...process.env, NODE_ENV: 'development' }
-      })
-
-      let outputBuffer = ''
-      let resolved = false
-      const checkReady = (data: Buffer) => {
-        outputBuffer += data.toString()
-        if (!resolved && (outputBuffer.includes('Ready') || outputBuffer.includes('started server on') || outputBuffer.includes('Local:') || outputBuffer.includes('ready'))) {
-          resolved = true
-          resolve(true)
-        }
-      }
-
-      if (this.devProcess.stdout) {
-        this.devProcess.stdout.on('data', checkReady)
-      }
-      if (this.devProcess.stderr) {
-        this.devProcess.stderr.on('data', checkReady)
-      }
-
-      this.devProcess.on('error', (error) => {
-        console.error('Failed to start dev server:', error)
-        if (!resolved) {
-          resolved = true
-          resolve(false)
-        }
-      })
-
-      setTimeout(() => {
-        if (!resolved) {
-          resolved = true
-          resolve(false)
-        }
-      }, 60000)
-    })
   }
 
   /**

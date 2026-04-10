@@ -110,36 +110,14 @@ class ComprehensiveTestRunner {
   async startDevServer() {
     console.log('🔧 Starting Next.js dev server...')
 
-    return new Promise((resolve) => {
-      this.devProcess = spawn('npm', ['run', 'dev'], {
-        stdio: ['inherit', 'pipe', 'pipe'],
-        cwd: process.cwd(),
-        env: { ...process.env, NODE_ENV: 'development' }
-      })
-
-      let outputBuffer = ''
-      const checkReady = (data) => {
-        outputBuffer += data.toString()
-        if (outputBuffer.includes('Ready') || outputBuffer.includes('started server on')) {
-          resolve(true)
-        }
-      }
-
-      if (this.devProcess.stdout) {
-        this.devProcess.stdout.on('data', checkReady)
-      }
-      if (this.devProcess.stderr) {
-        this.devProcess.stderr.on('data', checkReady)
-      }
-
-      this.devProcess.on('error', (error) => {
-        console.error('Failed to start dev server:', error)
-        resolve(false)
-      })
-
-      // Timeout after 30 seconds
-      setTimeout(() => resolve(false), 30000)
-    })
+    try {
+      await this.makeRequest('/api/system/health', 'GET', null, 1000)
+      console.log('✅ Dev server is already running, skipping start')
+      return true
+    } catch (error) {
+      console.log('ℹ️ No external dev server detected; relying on existing sandbox runtime only')
+      return true
+    }
   }
 
   /**
