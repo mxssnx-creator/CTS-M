@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
-import { initRedis, getActiveConnectionsForEngine, getRedisClient } from "@/lib/redis-db"
+import { initRedis, getActiveConnectionsForEngine } from "@/lib/redis-db"
 import { RedisMonitoring, RedisPositions, RedisTrades } from "@/lib/redis-operations"
+import { getSystemTrackingSnapshot } from "@/lib/dashboard-tracking"
 
 export const dynamic = "force-dynamic"
 export const fetchCache = "force-no-store"
@@ -11,6 +12,7 @@ export async function GET(request: NextRequest) {
     const exchangeFilter = searchParams.get("exchange")
 
     await initRedis()
+    const tracking = await getSystemTrackingSnapshot()
 
     // Get ONLY active connections (is_enabled_dashboard = true) for monitoring
     let connections = await getActiveConnectionsForEngine()
@@ -23,9 +25,9 @@ export async function GET(request: NextRequest) {
       (c: any) => c.is_active === true || c.is_active === "true",
     )
 
-    let totalPositions = 0
-    let openPositions = 0
-    let totalTrades = 0
+    let totalPositions = tracking.totals.positions
+    let openPositions = tracking.totals.positions
+    let totalTrades = tracking.totals.trades
     let dailyPnL = 0
     let unrealizedPnL = 0
 
@@ -33,13 +35,10 @@ export async function GET(request: NextRequest) {
       const positions = await RedisPositions.getPositionsByConnection(conn.id)
       const trades = await RedisTrades.getTradesByConnection(conn.id)
 
-      totalPositions += positions.length
-      totalTrades += trades.length
-
       const open = positions.filter(
         (p: any) => p.status !== "closed" && p.status !== "CLOSED",
       )
-      openPositions += open.length
+      openPositions = Math.max(openPositions, open.length)
 
       positions.forEach((pos: any) => {
         if (pos.status === "closed" || pos.status === "CLOSED") {

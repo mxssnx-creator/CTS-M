@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { ProgressionStateManager } from "@/lib/progression-state-manager"
 import { initRedis, getAllConnections } from "@/lib/redis-db"
+import { getConnectionTrackingSnapshot } from "@/lib/dashboard-tracking"
 
 export async function GET(request: NextRequest) {
   try {
@@ -11,11 +12,12 @@ export async function GET(request: NextRequest) {
 
     if (connectionId) {
       // Get progression for specific connection
-      const progression = await ProgressionStateManager.getProgressionState(connectionId)
+      const tracking = await getConnectionTrackingSnapshot(connectionId)
       return NextResponse.json({
         success: true,
         connectionId,
-        progression,
+        progression: tracking.progression,
+        tracking: tracking.counts,
       })
     }
 
@@ -25,7 +27,7 @@ export async function GET(request: NextRequest) {
       connections.map(async (conn) => ({
         connectionId: conn.id,
         name: conn.name,
-        progression: await ProgressionStateManager.getProgressionState(conn.id),
+        ...(await getConnectionTrackingSnapshot(conn.id)),
       })),
     )
 
