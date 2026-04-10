@@ -35,13 +35,15 @@ export interface StrategyEvaluation {
 export interface StrategyCoordinatorConfig {
   maxPositionsPerType?: number // Default 250
   pruneStrategy?: "fifo" | "performance" | "hybrid"
+  maxLivePositions?: number // Default 500 real tradable positions
 }
 
 export class StrategyCoordinator {
   private connectionId: string
   private config: StrategyCoordinatorConfig = {
     maxPositionsPerType: 250,
-    pruneStrategy: "hybrid"
+    pruneStrategy: "hybrid",
+    maxLivePositions: 500,
   }
   private readonly METRICS: Record<string, EvaluationMetrics> = {
     base: {
@@ -58,7 +60,7 @@ export class StrategyCoordinator {
     },
     real: {
       maxDrawdownTime: 720, // 12 hours (configurable via realMaxDrawdownHours)
-      minProfitFactor: 0.7, // Real min profit factor from settings
+      minProfitFactor: 1.4, // Real strategies come from MAIN sets above 1.4
       confidence: 0.65,
       description: "Exchange-mirrored high-confidence strategies"
     },
@@ -131,25 +133,38 @@ export class StrategyCoordinator {
    */
   private async createBaseStrategies(symbol: string, indications: any[]): Promise<StrategyEvaluation> {
     const metrics = this.METRICS.base
-    let totalCreated = 0
     const baseStrategies: any[] = []
+    const perDirectionConfigLimit = 1
+    const setCounts = new Map<string, number>()
 
     for (const indication of indications) {
+      const direction = this.normalizeDirection(indication)
+      const configKey = this.getConfigKey(indication)
+      const setKey = `${configKey}:${direction}`
+      const existingCount = setCounts.get(setKey) || 0
+      if (existingCount >= perDirectionConfigLimit) {
+        continue
+      }
+
       const strategy = {
         id: `${symbol}-base-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         type: "base",
         symbol,
         indication: indication.type,
-        profitFactor: indication.confidence * 2, // Use indication confidence to derive profit factor
+        profitFactor: this.getProfitFactor(indication),
         drawdownTime: 0, // BASE positions have no drawdown by default
         positionState: "new",
         confidence: indication.confidence || 0.5, // Set confidence from indication or default
+        direction,
+        configKey,
         created: new Date()
       }
-      
+
       baseStrategies.push(strategy)
-      totalCreated++
+      setCounts.set(setKey, existingCount + 1)
     }
+
+    const totalCreated = baseStrategies.length
 
     // Store BASE strategies
     const setKey = `strategies:${this.connectionId}:${symbol}:base`
@@ -232,15 +247,16 @@ export class StrategyCoordinator {
       for (const sizeMultiplier of positionSizeMultipliers) {
         for (const leverage of leverageMultipliers) {
           for (const posState of positionStateVariations) {
-            const mainStrategy = {
-              ...baseStrategy,
-              id: `${symbol}-main-${Date.now()}-${totalCreated}`,
-              type: "main",
-              configKey: `size${sizeMultiplier}:lev${leverage}:state${posState}`,
-              baseStrategyId: baseStrategy.id,
-              positionState: posState,
-              sizeMultiplier,
-              leverage,
+              const mainStrategy = {
+                ...baseStrategy,
+                id: `${symbol}-main-${Date.now()}-${totalCreated}`,
+                type: "main",
+                configKey: `size${sizeMultiplier}:lev${leverage}:state${posState}`,
+                sourceSetKey: baseStrategy.configKey,
+                baseStrategyId: baseStrategy.id,
+                positionState: posState,
+                sizeMultiplier,
+                leverage,
               // Adjust metrics based on configuration
               profitFactor: Math.max(1.0, baseStrategy.profitFactor * (1 + sizeMultiplier * 0.1)),
               drawdownTime: baseStrategy.drawdownTime + (leverage - 1) * 30, // Higher leverage = longer potential drawdown
@@ -256,8 +272,11 @@ export class StrategyCoordinator {
             if (mainStrategy.profitFactor >= minPF &&
                 mainStrategy.drawdownTime <= metrics.maxDrawdownTime &&
                 (mainStrategy.confidence || 0.5) >= minConf) {
-              mainStrategies.push(mainStrategy)
               const existing = perConfigStrategies.get(mainStrategy.configKey) || []
+              if (existing.length >= (this.config?.maxPositionsPerType || 250)) {
+                continue
+              }
+              mainStrategies.push(mainStrategy)
               existing.push(mainStrategy)
               perConfigStrategies.set(mainStrategy.configKey, existing)
               totalCreated++
@@ -353,7 +372,12 @@ export class StrategyCoordinator {
       s.profitFactor >= metrics.minProfitFactor &&
       s.drawdownTime <= metrics.maxDrawdownTime &&
       s.confidence >= metrics.confidence
-    )
+    ).sort((a: any, b: any) => {
+      if ((b.profitFactor || 0) !== (a.profitFactor || 0)) {
+        return (b.profitFactor || 0) - (a.profitFactor || 0)
+      }
+      return (b.confidence || 0) - (a.confidence || 0)
+    }).slice(0, this.config.maxLivePositions || 500)
 
     // Store LIVE strategies (executable)
     const liveSetKey = `strategies:${this.connectionId}:${symbol}:live`
@@ -392,5 +416,26 @@ export class StrategyCoordinator {
     console.log(`[v0] [StrategyFlow] ${symbol} COMPLETE: ${JSON.stringify(summary, null, 2)}`)
 
     await logProgressionEvent(this.connectionId, "strategy_flow", "info", `Complete strategy flow for ${symbol}`, summary)
+  }
+
+  private getProfitFactor(indication: any): number {
+    return indication.profitFactor ?? indication.profit_factor ?? indication.confidence * 2
+  }
+
+  private normalizeDirection(indication: any): string {
+    const raw = indication.direction ?? indication.side ?? indication.metadata?.direction ?? "long"
+    return String(raw).toLowerCase() === "short" ? "short" : "long"
+  }
+
+  private getConfigKey(indication: any): string {
+    if (indication.configKey) return String(indication.configKey)
+    if (indication.config?.id) return String(indication.config.id)
+    if (indication.metadata?.configKey) return String(indication.metadata.configKey)
+
+    return JSON.stringify({
+      type: indication.type ?? indication.indication ?? "unknown",
+      timeframe: indication.timeframe ?? indication.metadata?.timeframe ?? "na",
+      source: indication.source ?? indication.metadata?.source ?? "na",
+    })
   }
 }

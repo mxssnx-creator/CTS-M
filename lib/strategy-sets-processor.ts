@@ -1,6 +1,6 @@
 /**
  * Independent Strategy Sets Processor
- * Maintains separate 500-entry pools for each strategy calculation type
+ * Maintains separate capped pools for each strategy calculation type
  * Each type evaluates independently with own set configurations
  */
 
@@ -45,7 +45,7 @@ export interface StrategySet {
     config: any
     metadata: any
   }>
-  maxEntries: number // Configurable per type, default 500
+  maxEntries: number // Configurable per type, default 250
   stats: {
     totalCalculated: number
     totalQualified: number
@@ -101,12 +101,10 @@ export class StrategySetsProcessor {
       const startTime = Date.now()
 
       // Process all 4 strategy types in parallel with independent logic
-      const [baseResults, mainResults, realResults, liveResults] = await Promise.all([
-        this.processBaseStrategySet(symbol, indications),
-        this.processMainStrategySet(symbol, indications),
-        this.processRealStrategySet(symbol, indications),
-        this.processLiveStrategySet(symbol, indications),
-      ])
+      const baseResults = await this.processBaseStrategySet(symbol, indications)
+      const mainResults = await this.processMainStrategySet(symbol, baseResults.entries)
+      const realResults = await this.processRealStrategySet(symbol, mainResults.entries)
+      const liveResults = await this.processLiveStrategySet(symbol, realResults.entries)
 
       const duration = Date.now() - startTime
       const totalQualified =
@@ -141,6 +139,8 @@ export class StrategySetsProcessor {
     let qualified = 0
     let total = 0
 
+    const qualifiedEntries: any[] = []
+
     for (const indication of indications) {
       try {
         total++
@@ -154,6 +154,7 @@ export class StrategySetsProcessor {
 
           if (strategy.profitFactor >= 1.2) {
             qualified++
+            qualifiedEntries.push(strategy)
             await this.saveStrategyToSet(setKey, strategy, "base", indication.type)
           }
         }
@@ -162,18 +163,20 @@ export class StrategySetsProcessor {
       }
     }
 
-    return { type: "base", total, qualified }
+    return { type: "base", total, qualified, entries: qualifiedEntries }
   }
 
   /**
    * Main Strategy Set - Balanced, medium-risk signals
    */
-  private async processMainStrategySet(symbol: string, indications: any[]): Promise<any> {
+  private async processMainStrategySet(symbol: string, baseEntries: any[]): Promise<any> {
     const setKey = `strategy_set:${this.connectionId}:${symbol}:main`
     let qualified = 0
     let total = 0
 
-    for (const indication of indications) {
+    const qualifiedEntries: any[] = []
+
+    for (const indication of baseEntries) {
       try {
         total++
         // Main: stricter than base, select from base ones where profitfactor > 1.4
@@ -186,7 +189,8 @@ export class StrategySetsProcessor {
 
           if (strategy.profitFactor >= 1.4) {
             qualified++
-            await this.saveStrategyToSet(setKey, strategy, "main", indication.type)
+            qualifiedEntries.push(strategy)
+            await this.saveStrategyToSet(setKey, strategy, "main", indication.type || indication.metadata?.strategyType || "base")
           }
         }
       } catch (error) {
@@ -194,22 +198,24 @@ export class StrategySetsProcessor {
       }
     }
 
-    return { type: "main", total, qualified }
+    return { type: "main", total, qualified, entries: qualifiedEntries }
   }
 
   /**
    * Real Strategy Set - Aggressive, higher-risk signals
    */
-  private async processRealStrategySet(symbol: string, indications: any[]): Promise<any> {
+  private async processRealStrategySet(symbol: string, mainEntries: any[]): Promise<any> {
     const setKey = `strategy_set:${this.connectionId}:${symbol}:real`
     let qualified = 0
     let total = 0
 
-    for (const indication of indications) {
+    const qualifiedEntries: any[] = []
+
+    for (const indication of mainEntries) {
       try {
         total++
         // Real: strictest, select from Main Sets where Profitfactor > 1.4
-        if (indication.confidence > 0.78 && indication.profitFactor > 1.45) {
+        if (indication.confidence > 0.78 && indication.profitFactor > 1.4) {
           const strategy = {
             profitFactor: indication.profitFactor * 1.1, // Aggressive multiplier
             confidence: indication.confidence,
@@ -218,7 +224,8 @@ export class StrategySetsProcessor {
 
           if (strategy.profitFactor >= 1.4) {
             qualified++
-            await this.saveStrategyToSet(setKey, strategy, "real", indication.type)
+            qualifiedEntries.push(strategy)
+            await this.saveStrategyToSet(setKey, strategy, "real", indication.type || indication.metadata?.strategyType || "main")
           }
         }
       } catch (error) {
@@ -226,18 +233,20 @@ export class StrategySetsProcessor {
       }
     }
 
-    return { type: "real", total, qualified }
+    return { type: "real", total, qualified, entries: qualifiedEntries }
   }
 
   /**
    * Live Strategy Set - All qualifying signals, real-time only
    */
-  private async processLiveStrategySet(symbol: string, indications: any[]): Promise<any> {
+  private async processLiveStrategySet(symbol: string, realEntries: any[]): Promise<any> {
     const setKey = `strategy_set:${this.connectionId}:${symbol}:live`
     let qualified = 0
     let total = 0
 
-    for (const indication of indications) {
+    const qualifiedEntries: any[] = []
+
+    for (const indication of realEntries) {
       try {
         total++
         // Live: All indications with profit factor >= 1.0
@@ -249,14 +258,15 @@ export class StrategySetsProcessor {
           }
 
           qualified++
-          await this.saveStrategyToSet(setKey, strategy, "live", indication.type)
+          qualifiedEntries.push(strategy)
+          await this.saveStrategyToSet(setKey, strategy, "live", indication.type || indication.metadata?.strategyType || "real")
         }
       } catch (error) {
         console.error(`[v0] [StrategySets] Live strategy error:`, error)
       }
     }
 
-    return { type: "live", total, qualified }
+    return { type: "live", total, qualified, entries: qualifiedEntries }
   }
 
   /**
@@ -297,11 +307,12 @@ export class StrategySetsProcessor {
       const thresholdRearrange = Math.floor(maxEntries * 0.8) // Rearrange at 80% (200 when max is 250)
 
       // Threshold rearrangement: if exceeds threshold, trim to threshold then continue
-      if (entries.length > thresholdRearrange && entries.length <= maxEntries) {
+      if (entries.length >= thresholdRearrange && entries.length <= maxEntries) {
         // Keep best performing entries by profitFactor
         entries.sort((a: any, b: any) => (b.profitFactor || 0) - (a.profitFactor || 0))
         entries = entries.slice(0, thresholdRearrange)
       } else if (entries.length > maxEntries) {
+        entries.sort((a: any, b: any) => (b.profitFactor || 0) - (a.profitFactor || 0))
         entries = entries.slice(0, maxEntries)
       }
 

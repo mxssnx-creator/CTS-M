@@ -18,6 +18,7 @@ export interface StrategyResult {
   passed: boolean
   confidence: number
   parameters: Record<string, any>
+  setKey?: string
 }
 
 export interface StrategyStageStats {
@@ -38,6 +39,7 @@ export class StrategyEvaluator {
   private connectionId: string
   private progressManager: EngineProgressManager
   private stageStats: Map<string, StrategyStageStats> = new Map()
+  private evaluatedSets: Map<string, Set<string>> = new Map()
 
   constructor(connectionId: string) {
     this.connectionId = connectionId
@@ -60,6 +62,7 @@ export class StrategyEvaluator {
         avgConfidence: 0,
         symbols: {},
       })
+      this.evaluatedSets.set(stage, new Set())
     }
   }
 
@@ -190,6 +193,11 @@ export class StrategyEvaluator {
     if (!stats) return
 
     stats.evaluated++
+    if (result.setKey) {
+      const stageSets = this.evaluatedSets.get(result.stage)
+      stageSets?.add(result.setKey)
+      stats.setsCount = stageSets?.size || 0
+    }
     if (result.passed) {
       stats.passed++
     } else {
@@ -242,14 +250,14 @@ export class StrategyEvaluator {
       await client.lpush(symbolKey, JSON.stringify(result))
       await client.ltrim(symbolKey, 0, 499) // Keep last 500 per symbol
 
-      // Update sets count
-      const setsKey = `strategies:${this.connectionId}:sets:${result.stage}`
-      await client.incr(setsKey)
-      const count = await client.get(setsKey)
-      const setsCount = count ? parseInt(count as string, 10) : 0
-      const stats = this.stageStats.get(result.stage)
-      if (stats) {
-        stats.setsCount = setsCount
+      if (result.setKey) {
+        const setsKey = `strategies:${this.connectionId}:sets:${result.stage}`
+        await client.sadd(setsKey, result.setKey)
+        const count = await client.scard(setsKey)
+        const stats = this.stageStats.get(result.stage)
+        if (stats) {
+          stats.setsCount = count || 0
+        }
       }
 
     } catch (error) {

@@ -23,6 +23,8 @@ The template is a clean Next.js 16 starter with TypeScript and Tailwind CSS 4. I
 - [x] Sets configured with max 250 entries and threshold rearrangement at 80%
 - [x] Main Strategy Sets now select from base ones where profitfactor > 1.4
 - [x] Real Strategy Sets now select from Main Sets where profitfactor > threshold
+- [x] Strategy coordinator now enforces per-config-per-direction base set intake of 1 and derives counts from evaluated sets instead of pseudo-position volume
+- [x] Live trading selection now ranks real strategies and caps executable positions at 500 best candidates
 
 ## Current Structure
 
@@ -37,6 +39,7 @@ The template is a clean Next.js 16 starter with TypeScript and Tailwind CSS 4. I
 | `lib/strategy-coordinator.ts` | Strategy flow coordination with new thresholds | ✅ Updated |
 | `lib/strategy-sets-processor.ts` | Strategy sets with max 250 entries and threshold rearrangement | ✅ Updated |
 | `lib/indication-sets-processor.ts` | Indication sets with position limit per direction | ✅ Updated |
+| `lib/strategy-evaluator.ts` | Set-based stage counting via unique evaluated set keys | ✅ Updated |
 
 ## Current Focus
 
@@ -47,6 +50,7 @@ The template is ready. Trading dashboard and connection log presentation were im
 3. Further log categorization and operational dashboards
 4. Unified metrics derivation across monitoring, quickstart dialogs, and connection log summaries
 5. Strategy engine improvements with stricter profit factor requirements
+6. Prioritized live set selection with 500-position cap for real trading
 
 ## Quick Start Guide
 
@@ -104,3 +108,4 @@ export async function GET() {
 | 2026-04-09 | Added detailed connection log dialog and compact log summary for engine progression visibility |
 | 2026-04-10 | Fixed systemwide count reconciliation for progression/log dialogs and updated dev test scripts to avoid spawning local dev servers |
 | 2026-04-10 | Strategy engine updates: profit factor thresholds (base 1.2, main 1.4), position limits per direction, Sets-based counting, max 250 entries with threshold rearrangement |
+| 2026-04-10 | Refined strategy set flow: base intake limited per config+direction, main/real chained by set survivors, set counts based on evaluated sets, live trading capped to top 500 |
