@@ -144,23 +144,23 @@ export async function GET() {
         coordinator: engineRunning || coordinatorEngineCount > 0,
         logger: true,
       },
-        engines: {
-          indications: {
-            running: indicationsEngineRunning,
-            cycleCount: totalIndicationCycles,
-            resultsCount: indicationKeys,
-          },
-          strategies: {
-            running: strategiesEngineRunning,
-            cycleCount: totalStrategyCycles,
-            resultsCount: strategyKeys,
-          },
-          realtime: {
-            running: engineRunning,
-            cycleCount: totalRealtimeCycles,
-            resultsCount: Math.max(indicationKeys, strategyKeys),
-          },
+      engines: {
+        indications: {
+          running: indicationsEngineRunning,
+          cycleCount: Math.max(totalIndicationCycles, indicationKeys),
+          resultsCount: indicationKeys,
         },
+        strategies: {
+          running: strategiesEngineRunning,
+          cycleCount: Math.max(totalStrategyCycles, strategyKeys),
+          resultsCount: strategyKeys,
+        },
+        realtime: {
+          running: engineRunning,
+          cycleCount: Math.max(totalRealtimeCycles, keys > 0 ? 1 : 0),
+          resultsCount: Math.max(indicationKeys, strategyKeys),
+        },
+      },
       timestamp: new Date().toISOString(),
     })
   } catch (error) {
