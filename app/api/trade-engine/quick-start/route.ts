@@ -35,6 +35,7 @@ export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}))
     const action = body.action || "enable"
+    const requestedSymbol = typeof body.symbol === "string" && body.symbol.trim() ? body.symbol.trim().toUpperCase() : null
     
     await initRedis()
     const client = getRedisClient()
@@ -206,7 +207,10 @@ export async function POST(request: Request) {
     
     // Step 2: Get symbols (single symbol for quickstart)
     console.log(`${LOG_PREFIX}: [2/4] Configuring symbol...`)
-    let symbols = body.symbols || [...DEFAULT_SYMBOLS]
+    let symbols = Array.isArray(body.symbols) && body.symbols.length > 0 ? body.symbols : [...DEFAULT_SYMBOLS]
+    if (requestedSymbol) {
+      symbols = [requestedSymbol]
+    }
     
     if (testPassed) {
       try {
@@ -217,7 +221,7 @@ export async function POST(request: Request) {
         })
         
         if (typeof connector.getTopSymbols === "function") {
-          const topSymbols = await connector.getTopSymbols(1) // Get only 1 symbol
+          const topSymbols = await connector.getTopSymbols(1) // Get most volatile/priority symbol
           if (topSymbols && topSymbols.length > 0) {
             symbols = topSymbols
             console.log(`${LOG_PREFIX}: [2/4] Retrieved top symbol from exchange: ${symbols.join(", ")}`)
@@ -275,11 +279,11 @@ export async function POST(request: Request) {
        testPassed,
      })
      
-     // Step 4: Start engine
-     console.log(`${LOG_PREFIX}: [4/4] Checking if engine should start...`)
+      // Step 4: Start engine
+      console.log(`${LOG_PREFIX}: [4/4] Checking if engine should start...`)
      
-     if (isAssigned && isMainEnabled) {
-       console.log(`${LOG_PREFIX}: [4/4] Connection is explicitly enabled - initializing engine...`)
+      if (isAssigned && isMainEnabled) {
+        console.log(`${LOG_PREFIX}: [4/4] Connection is explicitly enabled - initializing engine...`)
        await setSettings(`engine_progression:${connectionId}`, {
          phase: "initializing",
          progress: 5,
@@ -298,15 +302,26 @@ export async function POST(request: Request) {
          const coordinator = getGlobalTradeEngineCoordinator()
          const settings = await loadSettingsAsync()
          
-         await coordinator.startEngine(connectionId, {
-           connectionId,
-           connection_name: connection.name,
-           exchange: exchangeName,
-           engine_type: "main",
-           indicationInterval: settings.mainEngineIntervalMs ? settings.mainEngineIntervalMs / 1000 : 5,
-           strategyInterval: settings.strategyUpdateIntervalMs ? settings.strategyUpdateIntervalMs / 1000 : 10,
-           realtimeInterval: settings.realtimeIntervalMs ? settings.realtimeIntervalMs / 1000 : 3,
-         })
+          await coordinator.startEngine(connectionId, {
+            connectionId,
+            connection_name: connection.name,
+            exchange: exchangeName,
+            engine_type: "main",
+            indicationInterval: Math.max(2, settings.mainEngineIntervalMs ? settings.mainEngineIntervalMs / 1000 : 5),
+            strategyInterval: Math.max(4, settings.strategyUpdateIntervalMs ? settings.strategyUpdateIntervalMs / 1000 : 10),
+            realtimeInterval: Math.max(2, settings.realtimeIntervalMs ? settings.realtimeIntervalMs / 1000 : 3),
+          })
+
+          await setSettings(`trade_engine_state:${connectionId}`, {
+            connection_id: connectionId,
+            connection_name: connection.name,
+            exchange: exchangeName,
+            status: "running",
+            last_start_reason: "quick-start",
+            quickstart_symbol: symbols[0] || null,
+            started_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
          
          console.log(`${LOG_PREFIX} ✓ Engine started for ${connection.name}`)
          await logProgressionEvent(connectionId, "engine_started", "info", "Main Trade Engine started via QuickStart", {
@@ -523,4 +538,14 @@ export async function POST(request: Request) {
       { status: 500 }
     )
   }
+}
+
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url)
+  const symbol = searchParams.get("symbol")
+  return POST(new Request(request.url, {
+    method: "POST",
+    headers: request.headers,
+    body: JSON.stringify({ action: "enable", symbol }),
+  }))
 }

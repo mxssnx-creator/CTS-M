@@ -33,10 +33,11 @@ export async function POST() {
         is_inserted: "1",
         is_enabled: "1",
         is_active_inserted: "1",
-        is_enabled_dashboard: "0",
-        is_active: "0",
+        is_enabled_dashboard: "1",
+        is_active: "1",
         is_predefined: "1",
         connection_method: "library",
+        is_live_trade: conn === "bybit-x03" || conn === "bingx-x01" ? "1" : "0",
         updated_at: new Date().toISOString(),
       }
       
@@ -52,13 +53,13 @@ export async function POST() {
       // Apply update and ensure set membership
       await client.hset(`connection:${conn}`, updateData)
       await client.sadd("connections", conn)
-      results[conn] = {
-        status: exists ? "updated" : "created",
-        active_inserted: true,
-        enabled: true,
-        dashboard_enabled: false,
-        has_credentials: hasCredentials,
-      }
+        results[conn] = {
+          status: exists ? "updated" : "created",
+          active_inserted: true,
+          enabled: true,
+          dashboard_enabled: true,
+          has_credentials: hasCredentials,
+        }
       console.log(`[v0] [FixConnections] ${conn}: ${exists ? "UPDATED" : "CREATED"} - active_inserted=1, credentials=${hasCredentials}`)
     }
     
@@ -70,6 +71,7 @@ export async function POST() {
       success: true,
       message: `Fixed ${updatedCount}/4 base connections, ${withCredentials} with credentials`,
       connections: results,
+      autoStartHint: "Run /api/trade-engine/quick-start?symbol=BTCUSDT after fixing connections to force a progression-ready engine startup.",
       timestamp: new Date().toISOString(),
     })
   } catch (error) {
