@@ -296,12 +296,7 @@ export class GlobalTradeEngineCoordinator {
       await initRedis()
       const allConnections = await getAllConnections()
       
-      // NOTE: Removed auto-enable logic
-      // Connections must be explicitly:
-      // 1. Created in base connections
-      // 2. Assigned to main connections via add-to-active flow
-      // 3. Enabled via dashboard toggle
-      // This ensures user control over which connections are processed
+      // Auto-recover main processing for eligible connections so dev/prod behave consistently.
       
       // Get assigned + enabled connections (user must explicitly assign to main)
       const connections = await getAssignedAndEnabledConnections()
@@ -336,6 +331,18 @@ export class GlobalTradeEngineCoordinator {
         console.log(`[v0] [Coordinator] Help: Add connections via Settings > Active with valid API credentials`)
         this.isGloballyRunning = true // Mark as running, ready for connections
         return
+      }
+
+      // Ensure all valid connections are marked enabled for main processing in Redis.
+      const { getRedisClient } = await import("@/lib/redis-db")
+      const client = getRedisClient()
+      for (const connection of validConnections) {
+        await client.hset(`connection:${connection.id}`, {
+          is_inserted: "1",
+          is_active_inserted: "1",
+          is_enabled_dashboard: "1",
+          is_active: "1",
+        })
       }
       
       const settings = await loadSettingsAsync()

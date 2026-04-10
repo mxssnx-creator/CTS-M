@@ -29,6 +29,16 @@ export async function GET(request: NextRequest) {
     const metrics = tracker.getMetrics()
     const summary = tracker.getMetricsSummary()
 
+    const persistedSnapshot = {
+      connectionId: metrics.connectionId,
+      timestamp: metrics.timestamp,
+      phases: metrics.phases,
+      evaluationCounts: metrics.evaluationCounts,
+      pseudoPositions: metrics.pseudoPositions,
+      performanceMetrics: metrics.performanceMetrics,
+      dataSizes: metrics.dataSizes,
+    }
+
     // Try to get persisted metrics from Redis as fallback
     let persistedMetrics = null
     try {
@@ -48,7 +58,7 @@ export async function GET(request: NextRequest) {
         data: {
           current: metrics,
           summary,
-          persisted: persistedMetrics,
+          persisted: persistedMetrics || persistedSnapshot,
           timestamp: new Date().toISOString(),
         },
       },

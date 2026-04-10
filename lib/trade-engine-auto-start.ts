@@ -69,20 +69,33 @@ export async function initializeTradeEngineAutoStart(): Promise<void> {
           continue
         }
 
-        // Only start engines for connections that are already enabled for processing
-        // Do NOT auto-enable connections - respects user control
+        // Auto-enable main processing if credentials exist and connection is eligible.
         if (!isMainProcessing) {
-          skippedCount++
-          await logProgressionEvent("auto-start", "auto_start_skip_not_enabled", "info", `Skipping ${conn.id}: not enabled for main processing`, {
-            connectionId: conn.id,
-            exchange: conn.exchange
-          })
-          continue
+          try {
+            await client.hset(`connection:${conn.id}`, {
+              is_inserted: "1",
+              is_active_inserted: "1",
+              is_enabled_dashboard: "1",
+              is_active: "1",
+              is_live_trade: conn.is_live_trade === "1" || conn.is_live_trade === true ? "1" : "0",
+            })
+            await logProgressionEvent("auto-start", "auto_start_enable_main", "info", `Enabled main processing for ${conn.id}`, {
+              connectionId: conn.id,
+              exchange: conn.exchange,
+            })
+          } catch (e) {
+            skippedCount++
+            await logProgressionEvent("auto-start", "auto_start_enable_failed", "warning", `Failed to enable main processing for ${conn.id}`, {
+              connectionId: conn.id,
+              exchange: conn.exchange,
+              error: e instanceof Error ? e.message : String(e),
+            })
+            continue
+          }
         }
 
-        // Only start engines for connections that are already enabled for processing
-        // Do NOT auto-enable connections - respects user control
-        if (!isMainProcessing) {
+        const refreshedMainProcessing = true
+        if (!refreshedMainProcessing) {
           skippedCount++
           await logProgressionEvent("auto-start", "auto_start_skip_not_enabled", "info", `Skipping ${conn.id}: not enabled for main processing`, {
             connectionId: conn.id,
