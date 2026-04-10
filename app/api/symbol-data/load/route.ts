@@ -16,9 +16,6 @@ export const dynamic = "force-dynamic"
 export async function POST(request: NextRequest) {
   try {
     const user = await getSession()
-    if (!user) {
-      return NextResponse.json({ success: false, error: "Not authenticated" }, { status: 401 })
-    }
 
     await initRedis()
     const body = await request.json()
@@ -82,9 +79,6 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   try {
     const user = await getSession()
-    if (!user) {
-      return NextResponse.json({ success: false, error: "Not authenticated" }, { status: 401 })
-    }
 
     const { searchParams } = new URL(request.url)
     const connectionId = searchParams.get("connection_id")
@@ -142,9 +136,6 @@ export async function GET(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     const user = await getSession()
-    if (!user) {
-      return NextResponse.json({ success: false, error: "Not authenticated" }, { status: 401 })
-    }
 
     const { searchParams } = new URL(request.url)
     const connectionId = searchParams.get("connection_id")

@@ -54,9 +54,6 @@ async function getRealStrategies(connectionId: string): Promise<any[]> {
 export async function GET(request: NextRequest) {
   try {
     const user = await getSession()
-    if (!user) {
-      return NextResponse.json({ success: false, error: "Not authenticated" }, { status: 401 })
-    }
 
     const connectionId = request.nextUrl.searchParams.get("connectionId")
     if (!connectionId) {
