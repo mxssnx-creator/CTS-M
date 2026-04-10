@@ -46,13 +46,13 @@ export class StrategyCoordinator {
   private readonly METRICS: Record<string, EvaluationMetrics> = {
     base: {
       maxDrawdownTime: 999999, // No limit - create all
-      minProfitFactor: 0.5, // Minimal ratio from settings
+      minProfitFactor: 1.2, // Base evaluation threshold (increased from 0.5)
       confidence: 0.3,
       description: "All qualifying pseudo positions"
     },
     main: {
       maxDrawdownTime: 1440, // 24 hours
-      minProfitFactor: 0.5, // Main min profit factor from settings (slider 0.1-3.0, default 0.5)
+      minProfitFactor: 1.4, // Main min profit factor (increased from 0.5)
       confidence: 0.5,
       description: "Position-state specific strategies with selected set evaluation"
     },
@@ -249,9 +249,8 @@ export class StrategyCoordinator {
               created: new Date()
             }
             
-            // Filter by MAIN metrics before adding - relaxed thresholds to allow position generation
-            // BASE strategies with PF=1.0 should pass through to MAIN for position tracking
-            const minPF = Math.max(0.5, metrics.minProfitFactor * 0.5) // Relaxed: 1.2 * 0.5 = 0.6
+            // Filter by MAIN metrics - select from base ones where profitfactor > 1.2
+            const minPF = metrics.minProfitFactor // 1.4 for main
             const minConf = Math.max(0.3, metrics.confidence * 0.6) // Relaxed: 0.5 * 0.6 = 0.3
             
             if (mainStrategy.profitFactor >= minPF &&
@@ -314,7 +313,7 @@ export class StrategyCoordinator {
     const stored = await getSettings(setKey)
     const mainStrategies = stored?.strategies || []
 
-    // Filter MAIN strategies with REAL metrics (mirror live exchange requirements)
+    // Filter MAIN strategies with REAL metrics (select from Main Sets where Profitfactor > 1.4)
     const realStrategies = mainStrategies.filter((s: any) =>
       s.profitFactor >= metrics.minProfitFactor &&
       s.drawdownTime <= metrics.maxDrawdownTime &&

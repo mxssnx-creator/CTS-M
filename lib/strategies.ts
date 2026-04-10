@@ -65,8 +65,8 @@ export class StrategyEngine {
     const lastPositions = pseudoPositions.slice(-config.last_positions_count)
     const avgProfitFactor = this.calculateAverageProfitFactor(lastPositions)
 
-    // Check if meets minimum criteria (0.4)
-    const isValid = avgProfitFactor >= 0.4
+    // Check if meets minimum criteria (1.2 for base evaluation)
+    const isValid = avgProfitFactor >= 1.2
 
     let adjustedVolumeFactor = config.volume_factor
     const appliedAdjustments: AdjustmentType[] = []
@@ -115,7 +115,7 @@ export class StrategyEngine {
   ): StrategyResult {
     // Selected sets evaluation by last position counts
     const selectedSetCounts = [1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20, 30]
-    const minProfitFactor = config.min_profit_factor || 0.5
+    const minProfitFactor = config.min_profit_factor || 1.4
     
     // Evaluate from selected sets by last pos count
     let bestEvaluation = { lastPosCount: 1, profitFactor: 0, passed: false }
@@ -123,7 +123,7 @@ export class StrategyEngine {
       const lastN = pseudoPositions.slice(-count)
       if (lastN.length < count) continue
       const pf = this.calculateAverageProfitFactor(lastN)
-      if (pf >= 0.6 && pf > bestEvaluation.profitFactor) {
+      if (pf >= 1.4 && pf > bestEvaluation.profitFactor) {
         bestEvaluation = { lastPosCount: count, profitFactor: pf, passed: true }
       }
     }
@@ -206,7 +206,7 @@ export class StrategyEngine {
     const lastPositions = pseudoPositions.slice(-config.last_positions_count)
     const avgProfitFactor = this.calculateAverageProfitFactor(lastPositions)
 
-    // Real evaluation: profitfactor >= 0.7 and drawdowntime <= 12h
+    // Real evaluation: profitfactor >= 1.4 and drawdowntime <= 12h
     const last15 = pseudoPositions.slice(-15)
     const last25 = pseudoPositions.slice(-25)
 
@@ -214,7 +214,7 @@ export class StrategyEngine {
     const avg25 = this.calculateAverageProfitFactor(last25)
 
     const drawdownHours = this.calculateDrawdownHours(pseudoPositions)
-    const isValid = (avg15 > 0.4 || avg25 > 0.4) && avgProfitFactor >= 0.7 && drawdownHours <= 12
+    const isValid = (avg15 > 1.2 || avg25 > 1.2) && avgProfitFactor >= 1.4 && drawdownHours <= 12
 
     let adjustedVolumeFactor = config.volume_factor
     const appliedAdjustments: AdjustmentType[] = []
@@ -510,7 +510,7 @@ export class StrategyEngine {
   }
 
   validateStrategyForTrading(strategy: StrategyResult): boolean {
-    return strategy.validation_state === "valid" && strategy.should_open_position && strategy.avg_profit_factor >= 0.4
+    return strategy.validation_state === "valid" && strategy.should_open_position && strategy.avg_profit_factor >= 1.2
   }
 
   private generateBaseConfigurations(): StrategyConfig[] {

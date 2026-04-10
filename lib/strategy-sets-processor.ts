@@ -20,10 +20,10 @@ async function getCachedClient() {
 
 // Default limits per strategy type (independently configurable)
 const DEFAULT_LIMITS = {
-  base: 900,
-  main: 300,
-  real: 120,
-  live: 500,
+  base: 250,
+  main: 250,
+  real: 250,
+  live: 250,
 }
 
 export interface StrategySetLimits {
@@ -144,15 +144,15 @@ export class StrategySetsProcessor {
     for (const indication of indications) {
       try {
         total++
-        // Base: broad intake (must be much higher volume than main/real)
-        if (indication.confidence > 0.45 && indication.profitFactor > 0.9) {
+        // Base: broad intake with profitfactor > 1.2 for evaluation
+        if (indication.confidence > 0.45 && indication.profitFactor > 1.2) {
           const strategy = {
-            profitFactor: indication.profitFactor * 0.95,
+            profitFactor: indication.profitFactor,
             confidence: indication.confidence,
             metadata: { ...indication.metadata, strategyType: "base", riskLevel: "low" },
           }
 
-          if (strategy.profitFactor >= 1.0) {
+          if (strategy.profitFactor >= 1.2) {
             qualified++
             await this.saveStrategyToSet(setKey, strategy, "base", indication.type)
           }
@@ -176,15 +176,15 @@ export class StrategySetsProcessor {
     for (const indication of indications) {
       try {
         total++
-        // Main: stricter than base
-        if (indication.confidence > 0.62 && indication.profitFactor > 1.2) {
+        // Main: stricter than base, select from base ones where profitfactor > 1.4
+        if (indication.confidence > 0.62 && indication.profitFactor > 1.4) {
           const strategy = {
             profitFactor: indication.profitFactor,
             confidence: indication.confidence,
             metadata: { ...indication.metadata, strategyType: "main", riskLevel: "medium" },
           }
 
-          if (strategy.profitFactor >= 1.0) {
+          if (strategy.profitFactor >= 1.4) {
             qualified++
             await this.saveStrategyToSet(setKey, strategy, "main", indication.type)
           }
@@ -208,7 +208,7 @@ export class StrategySetsProcessor {
     for (const indication of indications) {
       try {
         total++
-        // Real: strictest (must remain less than main volume)
+        // Real: strictest, select from Main Sets where Profitfactor > 1.4
         if (indication.confidence > 0.78 && indication.profitFactor > 1.45) {
           const strategy = {
             profitFactor: indication.profitFactor * 1.1, // Aggressive multiplier
@@ -216,7 +216,7 @@ export class StrategySetsProcessor {
             metadata: { ...indication.metadata, strategyType: "real", riskLevel: "high" },
           }
 
-          if (strategy.profitFactor >= 1.0) {
+          if (strategy.profitFactor >= 1.4) {
             qualified++
             await this.saveStrategyToSet(setKey, strategy, "real", indication.type)
           }
@@ -240,7 +240,7 @@ export class StrategySetsProcessor {
     for (const indication of indications) {
       try {
         total++
-        // Live: All indications with any positive profit factor
+        // Live: All indications with profit factor >= 1.0
         if (indication.profitFactor >= 1.0) {
           const strategy = {
             profitFactor: indication.profitFactor,
@@ -292,11 +292,16 @@ export class StrategySetsProcessor {
         metadata: strategy.metadata,
       })
 
-      // Get limit for this strategy type
+      // Get limit for this strategy type (max 250)
       const maxEntries = this.getLimit(strategyType as keyof StrategySetLimits)
+      const thresholdRearrange = Math.floor(maxEntries * 0.8) // Rearrange at 80% (200 when max is 250)
 
-      // Trim to max entries
-      if (entries.length > maxEntries) {
+      // Threshold rearrangement: if exceeds threshold, trim to threshold then continue
+      if (entries.length > thresholdRearrange && entries.length <= maxEntries) {
+        // Keep best performing entries by profitFactor
+        entries.sort((a: any, b: any) => (b.profitFactor || 0) - (a.profitFactor || 0))
+        entries = entries.slice(0, thresholdRearrange)
+      } else if (entries.length > maxEntries) {
         entries = entries.slice(0, maxEntries)
       }
 

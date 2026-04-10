@@ -569,11 +569,22 @@ export class IndicationSetsProcessor {
               confidence: indication.confidence,
               config,
               metadata: indication.metadata,
+              direction: indication.direction,
             }
 
             const existing = await client.get(setKey)
             let entries = existing ? JSON.parse(existing) : []
-            entries.unshift(entry)
+            
+            // Check position limit per direction (max 1 per validated indication per config)
+            const direction = indication.direction
+            const existingInDirection = direction 
+              ? entries.filter((e: any) => e.direction === direction).length 
+              : 0
+            
+            // Only add if under limit for this direction
+            if (existingInDirection < 1) {
+              entries.unshift(entry)
+            }
             
             // Threshold rearrangement: if exceeds threshold, trim to threshold then continue
             // This prevents full rebuild at max length
@@ -611,14 +622,26 @@ export class IndicationSetsProcessor {
       let entries = existing ? JSON.parse(existing) : []
 
       const id = `${type}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
-      entries.unshift({
+      const newEntry = {
         id,
         timestamp: new Date().toISOString(),
         profitFactor: indication.profitFactor,
         confidence: indication.confidence,
         config,
         metadata: indication.metadata,
-      })
+        direction: indication.direction,
+      }
+      
+      // Check position limit per direction (max 1 per validated indication per config)
+      const direction = indication.direction
+      const existingInDirection = direction 
+        ? entries.filter((e: any) => e.direction === direction).length 
+        : 0
+      
+      // Only add if under limit for this direction
+      if (existingInDirection < 1) {
+        entries.unshift(newEntry)
+      }
 
       const limit = this.getLimit(type as keyof IndicationSetLimits)
       if (entries.length > limit) entries = entries.slice(0, limit)
