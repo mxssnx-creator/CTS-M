@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { getRedisClient, initRedis, getActiveConnectionsForEngine } from "@/lib/redis-db"
 import { getGlobalTradeEngineCoordinator } from "@/lib/trade-engine"
 import { ProgressionStateManager } from "@/lib/progression-state-manager"
+import { getConnectionInsights } from "@/lib/connection-insights"
 
 export const dynamic = "force-dynamic"
 export const revalidate = 0
@@ -81,18 +82,13 @@ export async function GET() {
     const connectionStatuses = await Promise.all(
       connections.map(async (conn: any) => {
         try {
-          // Get progression state
-          const progressionState = await ProgressionStateManager.getProgressionState(conn.id)
-          
-          // Get positions and trades counts
-          const positionsKey = `positions:${conn.id}`
-          const tradesKey = `trades:${conn.id}`
-          
-          const positionsCount = await client.scard(positionsKey)
-          const tradesCount = await client.scard(tradesKey)
+          const insights = await getConnectionInsights(conn.id)
+          const progressionState = insights.tracking.progression
+          const positionsCount = insights.counts.positions
+          const tradesCount = insights.counts.trades
 
           // Determine if this connection's engine is actively running
-          const connectionRunning = effectivelyRunning && !isGloballyPaused
+          const connectionRunning = (effectivelyRunning && !isGloballyPaused) || insights.engine.status === "running"
 
           return {
             id: conn.id,
@@ -103,6 +99,48 @@ export async function GET() {
             activelyUsing: conn.is_enabled_dashboard === true || conn.is_enabled_dashboard === "1",
             positions: positionsCount,
             trades: tradesCount,
+            health: {
+              overall: insights.logLevels.error > 0 ? "degraded" : "healthy",
+              components: {
+                indications: {
+                  status: insights.counts.indications > 0 ? "healthy" : "degraded",
+                  lastCycleDuration: insights.engine.indicationAvgDuration,
+                  errorCount: insights.logLevels.error,
+                  successRate: progressionState.cycleSuccessRate || 0,
+                },
+                strategies: {
+                  status: insights.counts.strategies > 0 ? "healthy" : "degraded",
+                  lastCycleDuration: insights.engine.strategyAvgDuration,
+                  errorCount: insights.logLevels.error,
+                  successRate: progressionState.tradeSuccessRate || progressionState.cycleSuccessRate || 0,
+                },
+                realtime: {
+                  status: insights.engine.realtimeCycles > 0 || positionsCount > 0 ? "healthy" : "degraded",
+                  lastCycleDuration: insights.engine.realtimeAvgDuration,
+                  errorCount: insights.logLevels.error,
+                  successRate: progressionState.tradeSuccessRate || 0,
+                },
+              },
+            },
+            metrics: {
+              indicationCycleCount: insights.engine.indicationCycles,
+              strategyCycleCount: insights.engine.strategyCycles,
+              realtimeCycleCount: insights.engine.realtimeCycles,
+              indicationAvgDuration: insights.engine.indicationAvgDuration,
+              strategyAvgDuration: insights.engine.strategyAvgDuration,
+              realtimeAvgDuration: insights.engine.realtimeAvgDuration,
+              cycleTimeMs: insights.engine.lastCycleDuration,
+            },
+            summary: {
+              symbolsActive: Math.max(insights.activeSymbols.length, 1),
+              prehistoricDataSize: progressionState.prehistoricCandlesProcessed || progressionState.prehistoricCyclesCompleted || 0,
+              indicationTypes: {
+                ...insights.indicationsByType,
+                total: insights.counts.indications,
+              },
+              strategyCounts: insights.strategyCounts,
+              realtimeCycles: insights.engine.realtimeCycles,
+            },
             progression: {
               cycles_completed: progressionState.cyclesCompleted || 0,
               successful_cycles: progressionState.successfulCycles || 0,

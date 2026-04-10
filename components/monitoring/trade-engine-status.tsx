@@ -66,50 +66,29 @@ export function TradeEngineStatus() {
           totalConnections: globalData.connections?.length || 0,
         })
 
-        // Get individual engine statuses
-        const engines: EngineStatus[] = []
-        for (const conn of globalData.connections || []) {
-          const connResponse = await fetch(`/api/trade-engine/${conn.id}/status`)
-          if (connResponse.ok) {
-            const connData = await connResponse.json()
-            engines.push({
-              connectionId: conn.id,
-              connectionName: conn.name,
-              status: connData.status || "idle",
-              health: connData.health || {
-                overall: "healthy",
-                components: {
-                  indications: {
-                    status: "healthy",
-                    lastCycleDuration: 0,
-                    errorCount: 0,
-                    successRate: 100,
-                  },
-                  strategies: {
-                    status: "healthy",
-                    lastCycleDuration: 0,
-                    errorCount: 0,
-                    successRate: 100,
-                  },
-                  realtime: {
-                    status: "healthy",
-                    lastCycleDuration: 0,
-                    errorCount: 0,
-                    successRate: 100,
-                  },
-                },
-              },
-              metrics: {
-                indicationCycleCount: connData.indication_cycle_count || 0,
-                strategyCycleCount: connData.strategy_cycle_count || 0,
-                realtimeCycleCount: connData.realtime_cycle_count || 0,
-                indicationAvgDuration: connData.indication_avg_duration_ms || 0,
-                strategyAvgDuration: connData.strategy_avg_duration_ms || 0,
-                realtimeAvgDuration: connData.realtime_avg_duration_ms || 0,
-              },
-            })
-          }
-        }
+        const engines: EngineStatus[] = (globalData.connections || []).map((conn: any) => ({
+          connectionId: conn.id,
+          connectionName: conn.name,
+          status: conn.status || "idle",
+          health: conn.health || {
+            overall: "healthy",
+            components: {
+              indications: { status: "healthy", lastCycleDuration: 0, errorCount: 0, successRate: 100 },
+              strategies: { status: "healthy", lastCycleDuration: 0, errorCount: 0, successRate: 100 },
+              realtime: { status: "healthy", lastCycleDuration: 0, errorCount: 0, successRate: 100 },
+            },
+          },
+          metrics: conn.metrics || {
+            indicationCycleCount: 0,
+            strategyCycleCount: 0,
+            realtimeCycleCount: 0,
+            indicationAvgDuration: 0,
+            strategyAvgDuration: 0,
+            realtimeAvgDuration: 0,
+            cycleTimeMs: 0,
+          },
+          summary: conn.summary,
+        }))
         setEnginesStatus(engines)
       }
     } catch (error) {

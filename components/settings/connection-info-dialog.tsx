@@ -34,15 +34,26 @@ export function ConnectionInfoDialog({ open, onOpenChange, connectionId, connect
         fetch(`/api/settings/connections/${connectionId}/settings`),
         fetch(`/api/settings/connections/${connectionId}/preset-type`),
       ])
+      const [progressionRes, strategiesRes, positionsRes] = await Promise.all([
+        fetch(`/api/connections/progression/${connectionId}/logs`),
+        fetch(`/api/data/strategies?connectionId=${connectionId}`),
+        fetch(`/api/positions/${connectionId}`),
+      ])
 
       const indications = indicationsRes.ok ? await indicationsRes.json() : { indications: [] }
       const settings = settingsRes.ok ? await settingsRes.json() : {}
       const presetType = presetTypeRes.ok ? await presetTypeRes.json() : { presetType: null }
+      const progression = progressionRes.ok ? await progressionRes.json() : { progressionState: null }
+      const strategies = strategiesRes.ok ? await strategiesRes.json() : { data: [] }
+      const positions = positionsRes.ok ? await positionsRes.json() : { positions: [] }
 
       setInfo({
         indications: indications.indications || [],
         settings: settings,
         presetType: presetType.presetType,
+        progression: progression.progressionState || null,
+        strategies: strategies.data || [],
+        positions: positions.positions || positions.data || [],
       })
     } catch (error) {
       console.error("[v0] Failed to load connection info:", error)
@@ -87,6 +98,32 @@ export function ConnectionInfoDialog({ open, onOpenChange, connectionId, connect
                     <div>
                       <span className="font-medium">Direction:</span> {info.presetType.direction || "N/A"}
                     </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <Separator />
+
+            {info?.progression && (
+              <div className="space-y-3">
+                <h3 className="text-lg font-semibold">Live Connection State</h3>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div className="p-3 border rounded">
+                    <div className="font-medium mb-1">Cycles</div>
+                    <div className="text-2xl font-bold">{info.progression.cyclesCompleted || 0}</div>
+                  </div>
+                  <div className="p-3 border rounded">
+                    <div className="font-medium mb-1">Trades</div>
+                    <div className="text-2xl font-bold">{info.progression.totalTrades || 0}</div>
+                  </div>
+                  <div className="p-3 border rounded">
+                    <div className="font-medium mb-1">Tracked Indications</div>
+                    <div className="text-2xl font-bold">{info.progression.indicationsCount || 0}</div>
+                  </div>
+                  <div className="p-3 border rounded">
+                    <div className="font-medium mb-1">Tracked Strategies</div>
+                    <div className="text-2xl font-bold">{info.progression.strategiesCount || 0}</div>
                   </div>
                 </div>
               </div>
@@ -139,6 +176,14 @@ export function ConnectionInfoDialog({ open, onOpenChange, connectionId, connect
                 <div className="p-3 border rounded">
                   <div className="font-medium mb-1">Live Trade Factor</div>
                   <div className="text-2xl font-bold">{info?.settings?.baseVolumeFactorLive || 1.0}</div>
+                </div>
+                <div className="p-3 border rounded">
+                  <div className="font-medium mb-1">Open Positions</div>
+                  <div className="text-2xl font-bold">{info?.positions?.length || 0}</div>
+                </div>
+                <div className="p-3 border rounded">
+                  <div className="font-medium mb-1">Strategies in Scope</div>
+                  <div className="text-2xl font-bold">{info?.strategies?.length || 0}</div>
                 </div>
               </div>
             </div>
