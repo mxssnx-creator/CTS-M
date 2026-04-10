@@ -1109,6 +1109,10 @@ export class TradeEngineManager {
    * OPTIMIZED: Reduced frequency from 2s to 10s (5x less Redis writes)
    */
   private startHeartbeat(): void {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer)
+      this.heartbeatTimer = undefined
+    }
     // Send heartbeat every 10 seconds (was 2s - too frequent)
     this.heartbeatTimer = setInterval(async () => {
       if (!this.isRunning) {
@@ -1128,6 +1132,7 @@ export class TradeEngineManager {
         // Silent fail - heartbeat is non-critical
       }
     }, 10000) // Changed from 2000ms to 10000ms
+    this.heartbeatTimer.unref?.()
   }
 
   /**

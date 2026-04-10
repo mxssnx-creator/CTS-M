@@ -36,9 +36,6 @@ export async function POST(request: NextRequest) {
       // Clear any cached data if needed
     }
 
-    // Wait a moment before restart
-    await new Promise((resolve) => setTimeout(resolve, 1000))
-
     // Start the engine again
     await globalTradeEngine.start()
 

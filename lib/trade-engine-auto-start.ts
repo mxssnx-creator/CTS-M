@@ -59,6 +59,11 @@ export async function initializeTradeEngineAutoStart(): Promise<void> {
       let skippedCount = 0
       let failedCount = 0
 
+      await client.hset("trade_engine:auto_start_health", {
+        status: "initializing",
+        updated_at: new Date().toISOString(),
+      })
+
       for (const conn of connections) {
         const hasValidCredentials = hasConnectionCredentials(conn, 20, false)
         const isMainProcessing = isConnectionMainProcessing(conn)
@@ -139,6 +144,14 @@ export async function initializeTradeEngineAutoStart(): Promise<void> {
 
       console.log(`[v0] [Auto-Start] Started ${startedCount} engine(s) for connections with valid credentials`)
 
+      await client.hset("trade_engine:auto_start_health", {
+        status: "running",
+        updated_at: new Date().toISOString(),
+        started_count: String(startedCount),
+        skipped_count: String(skippedCount),
+        failed_count: String(failedCount),
+      })
+
       await logProgressionEvent("auto-start", "auto_start_complete", "info", `Auto-start complete: ${startedCount} started, ${skippedCount} skipped, ${failedCount} failed`, {
         enginesStarted: startedCount,
         enginesSkipped: skippedCount,
@@ -154,6 +167,14 @@ export async function initializeTradeEngineAutoStart(): Promise<void> {
     await logProgressionEvent("auto-start", "auto_start_monitor_started", "info", "Connection monitoring started", {})
   } catch (error) {
     console.error("[v0] [Auto-Start] Initialization failed:", error)
+    try {
+      const client = getRedisClient()
+      await client.hset("trade_engine:auto_start_health", {
+        status: "error",
+        updated_at: new Date().toISOString(),
+        error: error instanceof Error ? error.message : String(error),
+      })
+    } catch {}
     await logProgressionEvent("auto-start", "auto_start_error", "error", `Auto-start initialization failed: ${error instanceof Error ? error.message : String(error)}`, {
       error: error instanceof Error ? error.message : String(error)
     })
@@ -235,9 +256,20 @@ function startConnectionMonitoring(): void {
       // This recovers from missed toggle events, service restarts, or stale state.
       try {
         const coordinator = getGlobalTradeEngineCoordinator()
-        await coordinator.refreshEngines()
+        if (globalRunning || enabledConnections.length > 0) {
+          await coordinator.refreshEngines()
+        }
       } catch (syncError) {
         console.warn("[v0] [Monitor] Failed to refresh coordinator engines:", syncError)
+      }
+
+      if (enabledConnections.length > 0 && !globalRunning) {
+        try {
+          const coordinator = getGlobalTradeEngineCoordinator()
+          await coordinator.startAll()
+        } catch (startError) {
+          console.warn("[v0] [Monitor] Failed to auto-start coordinator:", startError)
+        }
       }
       
     } catch (error) {

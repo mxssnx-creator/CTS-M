@@ -157,11 +157,16 @@ export class WebSocketManager {
    * Start heartbeat to keep connection alive
    */
   private startHeartbeat(): void {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer)
+      this.heartbeatTimer = undefined
+    }
     this.heartbeatTimer = setInterval(() => {
       if (this.ws?.readyState === WebSocket.OPEN) {
         this.send({ type: "ping" })
       }
     }, this.config.heartbeatInterval)
+    this.heartbeatTimer.unref?.()
   }
 
   /**

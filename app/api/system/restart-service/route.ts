@@ -22,6 +22,7 @@ export async function POST(request: NextRequest) {
         await coordinator.stopAllEngines()
         restartLog("Cleared engine state from Redis...")
         await client.del("trade_engine:global")
+        await client.del("trade_engine:auto_start_health")
         restartLog("✓ Trade engine restarted")
         break
 
@@ -57,7 +58,7 @@ export async function POST(request: NextRequest) {
         const engineKeys = await client.keys("trade_engine:*").catch(() => [])
         if (engineKeys.length > 0) {
           await client.del(...engineKeys)
-          restartLog(`Cleared ${engineKeys.length} engine keys`)
+          restartLog(`Cleared ${engineKeys.length} engine keys`) 
         }
         
         // Clear indication state

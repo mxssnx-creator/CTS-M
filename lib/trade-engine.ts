@@ -287,6 +287,10 @@ export class GlobalTradeEngineCoordinator {
   async startAll(): Promise<void> {
     try {
       console.log("[v0] [Coordinator] Starting global trade engine...")
+      if (this.isGloballyRunning && this.engineManagers.size > 0) {
+        console.log("[v0] [Coordinator] Global engine already running; skipping duplicate start")
+        return
+      }
       
       // Import Redis functions
       const { initRedis, getAssignedAndEnabledConnections, getAllConnections } = await import("@/lib/redis-db")
@@ -369,6 +373,7 @@ export class GlobalTradeEngineCoordinator {
       console.log(`[v0] [Coordinator] ✓ Global engine started: ${successCount}/${validConnections.length} connections active`)
     } catch (error) {
       console.error("[v0] [Coordinator] Failed to start global engine:", error)
+      this.isGloballyRunning = false
     }
   }
 
