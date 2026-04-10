@@ -75,7 +75,7 @@ interface OverallStats {
 }
 
 export function QuickStartButton({ onQuickStartComplete }: QuickStartButtonProps) {
-  const { setSelectedConnectionId } = useExchange()
+  const { selectedConnectionId, setSelectedConnectionId, selectBingxConnection, loadActiveConnections } = useExchange()
   const [isRunning, setIsRunning] = useState(false)
   const [functionalOverview, setFunctionalOverview] = useState<FunctionalOverview | null>(null)
   const [overallStats, setOverallStats] = useState<OverallStats | null>(null)
@@ -87,6 +87,7 @@ export function QuickStartButton({ onQuickStartComplete }: QuickStartButtonProps
     { id: "enable",  name: "Enable BingX (BTCUSDT)",         status: "pending" },
     { id: "engine",  name: "Launch Engine + Progression",    status: "pending" },
   ])
+  const [preferredQuickstartConnectionId, setPreferredQuickstartConnectionId] = useState<string | null>(null)
 
   const updateStep = (stepId: string, status: QuickStartStep["status"], message?: string) => {
     setSteps(prev => prev.map(s => s.id === stepId ? { ...s, status, message } : s))
@@ -130,6 +131,12 @@ export function QuickStartButton({ onQuickStartComplete }: QuickStartButtonProps
     setIsRunning(true)
     setFunctionalOverview(null)
     setSteps(prev => prev.map(s => ({ ...s, status: "pending", message: undefined })))
+
+    const preselectedBingxId = selectBingxConnection({ preferAssigned: true })
+    if (preselectedBingxId) {
+      setPreferredQuickstartConnectionId(preselectedBingxId)
+      setSelectedConnectionId(preselectedBingxId)
+    }
 
     console.log("[v0] [QuickStart] ========================================")
     console.log("[v0] [QuickStart] QUICKSTART INITIATED — BingX, 1 symbol")
@@ -190,6 +197,8 @@ export function QuickStartButton({ onQuickStartComplete }: QuickStartButtonProps
         if (!d.success) throw new Error(d.error ?? "Enable returned failure")
         enabledConnectionId = d.connection?.id ?? null
         if (enabledConnectionId) {
+          setPreferredQuickstartConnectionId(enabledConnectionId)
+          await loadActiveConnections({ force: true }).catch(() => undefined)
           setSelectedConnectionId(enabledConnectionId)
         }
         if (d.overallStats) {
@@ -323,10 +332,10 @@ export function QuickStartButton({ onQuickStartComplete }: QuickStartButtonProps
           </Button>
           
           {/* Main / Log compact overview button */}
-          <QuickstartOverviewDialog connectionId="bingx-x01" />
+          <QuickstartOverviewDialog connectionId={selectedConnectionId || preferredQuickstartConnectionId || "bingx-x01"} />
 
           {/* Detailed overview button */}
-          <QuickstartDetailedDialog connectionId="bingx-x01" />
+          <QuickstartDetailedDialog connectionId={selectedConnectionId || preferredQuickstartConnectionId || "bingx-x01"} />
 
           {/* Detailed Logs Button */}
           <DetailedLoggingDialog />

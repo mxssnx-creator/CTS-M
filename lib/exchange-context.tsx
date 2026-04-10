@@ -7,6 +7,7 @@ interface ExchangeContextType {
   setSelectedExchange: (exchange: string | null) => void
   selectedConnectionId: string | null
   setSelectedConnectionId: (connectionId: string | null) => void
+  selectBingxConnection: (options?: { preferAssigned?: boolean }) => string | null
   selectedConnection: any | null
   activeConnections: any[]
   loadActiveConnections: (options?: { force?: boolean }) => Promise<void>
@@ -23,6 +24,29 @@ export function ExchangeProvider({ children }: { children: ReactNode }) {
   const loadingRef = useRef(false)
   const lastLoadRef = useRef(0)
   const LOAD_COOLDOWN = 60000 // 60 seconds between refreshes
+
+  const toBoolean = useCallback((v: unknown) => v === true || v === 1 || v === "1" || v === "true", [])
+
+  const pickBingxConnection = useCallback((connections: any[], options?: { preferAssigned?: boolean }) => {
+    const preferAssigned = options?.preferAssigned !== false
+    const bingxConnections = connections.filter((connection: any) => (connection.exchange || "").toLowerCase().trim() === "bingx")
+    if (bingxConnections.length === 0) return null
+
+    if (preferAssigned) {
+      const assigned = bingxConnections.find((connection: any) =>
+        toBoolean(connection.is_enabled_dashboard) || toBoolean(connection.is_active_inserted) || toBoolean(connection.is_dashboard_inserted),
+      )
+      if (assigned) return assigned
+    }
+
+    return bingxConnections[0] || null
+  }, [toBoolean])
+
+  const applySelection = useCallback((connection: any | null) => {
+    setSelectedConnectionId(connection?.id || null)
+    setSelectedExchange(connection?.exchange || null)
+    return connection?.id || null
+  }, [])
 
   const loadActiveConnections = useCallback(async (options?: { force?: boolean }) => {
     const force = options?.force === true
@@ -41,7 +65,6 @@ export function ExchangeProvider({ children }: { children: ReactNode }) {
         const connections = data.connections || []
         
         const BASE_EXCHANGES = ["bybit", "bingx"]
-        const toBoolean = (v: unknown) => v === true || v === 1 || v === "1" || v === "true"
         
         const mainConnections = connections.filter((c: any) => {
           const exchange = (c.exchange || "").toLowerCase().trim()
@@ -54,9 +77,8 @@ export function ExchangeProvider({ children }: { children: ReactNode }) {
         setActiveConnections(mainConnections)
         
         if (mainConnections.length > 0 && !selectedConnectionId) {
-          const firstConnection = mainConnections[0]
-          setSelectedConnectionId(firstConnection.id)
-          setSelectedExchange(firstConnection.exchange || null)
+          const preferredConnection = pickBingxConnection(mainConnections, { preferAssigned: true }) || mainConnections[0]
+          applySelection(preferredConnection)
         }
       }
     } catch (error) {
@@ -66,7 +88,7 @@ export function ExchangeProvider({ children }: { children: ReactNode }) {
       setIsLoading(false)
       lastLoadRef.current = Date.now()
     }
-  }, [])
+  }, [applySelection, pickBingxConnection, selectedConnectionId, toBoolean])
 
   // Only load on mount, remove interval to prevent loops
   useEffect(() => {
@@ -90,6 +112,7 @@ export function ExchangeProvider({ children }: { children: ReactNode }) {
           const matching = activeConnections.find((connection: any) => connection.id === connectionId)
           setSelectedExchange(matching?.exchange || null)
         },
+        selectBingxConnection: (options) => applySelection(pickBingxConnection(activeConnections, options)),
         selectedConnection,
         activeConnections,
         loadActiveConnections,

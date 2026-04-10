@@ -151,7 +151,7 @@ export async function GET(request: Request) {
       activeConnections.map((c: any) => getProgressionLogs(c.id))
     )
 
-    const globalLogs = await getProgressionLogs("global")
+    const globalLogs = selectedConnectionId ? [] : await getProgressionLogs("global")
 
     const positionsByConnection = await Promise.all(
       activeConnections.map((c: any) => getConnectionPositions(c.id))
@@ -385,7 +385,7 @@ export async function GET(request: Request) {
     )
 
     const summary = {
-      symbolsActive: Math.max(1, activeConnections.length),
+      symbolsActive: perConnection.reduce((sum, item) => sum + Math.max(1, item.symbols.length), 0) || Math.max(1, activeConnections.length),
       indicationCycles,
       strategyCycles,
       totalIndicationsCalculated: aggregatedIndications.total || indicationCycles,

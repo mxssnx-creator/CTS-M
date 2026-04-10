@@ -7,23 +7,29 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { BarChart3, RefreshCw } from "lucide-react"
+import { useExchange } from "@/lib/exchange-context"
 
 interface Props {
   connectionId?: string
 }
 
 export function QuickstartOverviewDialog({ connectionId = "bingx-x01" }: Props) {
+  const { selectedConnectionId } = useExchange()
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [stats, setStats] = useState<any>(null)
   const [logs, setLogs] = useState<any[]>([])
   const [resolvedConnectionId, setResolvedConnectionId] = useState(connectionId)
+  const effectiveConnectionId = selectedConnectionId || connectionId
 
   const load = async () => {
     setLoading(true)
     try {
-      const candidates = [connectionId, connectionId.startsWith("conn-") ? connectionId.replace(/^conn-/, "") : `conn-${connectionId}`]
-      let chosenId = connectionId
+      const candidates = Array.from(new Set([
+        effectiveConnectionId,
+        effectiveConnectionId.startsWith("conn-") ? effectiveConnectionId.replace(/^conn-/, "") : `conn-${effectiveConnectionId}`,
+      ]))
+      let chosenId = effectiveConnectionId
       let statsPayload: any = {}
       let logsPayload: any = {}
 
@@ -56,7 +62,7 @@ export function QuickstartOverviewDialog({ connectionId = "bingx-x01" }: Props) 
       void load()
     }, 15000)
     return () => clearInterval(timer)
-  }, [open, connectionId])
+  }, [open, effectiveConnectionId])
 
   const grouped = useMemo(() => {
     const overall = logs.filter((l) => ["system", "coordinator"].includes(String(l.engine || "").toLowerCase()))
@@ -95,7 +101,8 @@ export function QuickstartOverviewDialog({ connectionId = "bingx-x01" }: Props) 
               <Badge variant="outline">Cycles: {stats?.cyclesCompleted || 0}</Badge>
               <Badge variant="outline">Intervals: {stats?.intervalsProcessed || 0}</Badge>
               <Badge variant="outline">Prehistoric data: {stats?.prehistoricDataSize || 0}</Badge>
-              <Badge variant="outline">DB entries: {stats?.redisDbEntries || 0}</Badge>
+              <Badge variant="outline">Tracked results: {stats?.indicationsCount || 0}/{stats?.strategiesCount || 0}</Badge>
+              <Badge variant="outline">Trades/PnL: {stats?.totalTrades || 0}/{stats?.totalProfit || 0}</Badge>
               <Badge variant="outline">Ind dir/move: {stats?.indicationEvaluatedDirection || 0}/{stats?.indicationEvaluatedMove || 0}</Badge>
               <Badge variant="outline">Ind active/opt: {stats?.indicationEvaluatedActive || 0}/{stats?.indicationEvaluatedOptimal || 0}</Badge>
               <Badge variant="outline">Sets base/main: {stats?.setsBaseCount || 0}/{stats?.setsMainCount || 0}</Badge>

@@ -30,6 +30,7 @@ The template is a clean Next.js 16 starter with TypeScript and Tailwind CSS 4. I
 - [x] Added Redis operation compatibility shims and Redis set-based fallback loading for indications/strategies APIs to reduce timeout and empty-response failures
 - [x] Verify-engine and quick-start endpoints now use cleaner active-connection detection and quick-start status handling, but legacy runtime still shows cached verifier method gaps during dev server hot state
 - [x] Tracking-heavy endpoints now share a unified dashboard snapshot helper so progression, engine progress, monitoring stats, and strategy/indication overview routes stop reporting false zeros or mock-only counts
+- [x] Quick Start now drives BingX selection in the top exchange selector and quickstart dialogs/log overviews follow the actively selected connection instead of a hardcoded default
 
 ## Current Structure
 
@@ -48,6 +49,7 @@ The template is a clean Next.js 16 starter with TypeScript and Tailwind CSS 4. I
 | `lib/redis-operations.ts` | Compatibility shims for legacy verification paths | ✅ Updated |
 | `lib/db-helpers.ts` | Fallback loading from set-based indication/strategy Redis stores | ✅ Updated |
 | `lib/dashboard-tracking.ts` | Unified live tracking/count aggregation for monitoring and overview APIs | ✅ Added |
+| `lib/exchange-context.tsx` | Shared exchange selection with BingX quickstart preference | ✅ Updated |
 
 ## Current Focus
 
@@ -62,6 +64,7 @@ The template is ready. Trading dashboard and connection log presentation were im
 7. Investigating legacy verification/API timeout failures surfaced by comprehensive dev testing
 8. Remaining runtime issues are now concentrated in dev-server stale module state and engine/coordinator startup visibility
 9. Endpoint metrics now prioritize real progression/Redis snapshots over placeholder mock aggregates
+10. Quickstart UX now keeps connection-scoped dialogs and top-level exchange selection aligned to the current BingX/active connection
 
 ## Quick Start Guide
 
@@ -123,3 +126,4 @@ export async function GET() {
 | 2026-04-10 | Confirmed per-set pseudo position independence via symbol+config+direction identity and ran comprehensive dev test suite; failures point to unrelated Redis verification method gaps and API timeouts |
 | 2026-04-10 | Added Redis compatibility helpers, set-based API fallbacks, and verify/quick-start endpoint improvements; rerun reduced failures from 5 to 3, with remaining issues tied to stale dev runtime and coordinator visibility |
 | 2026-04-10 | Reworked tracking-centric endpoints to consume unified live aggregation, removing hardcoded strategy overview data and reducing zero-count drift across progression, monitoring, and evaluation APIs |
+| 2026-04-10 | Updated exchange context and quickstart dialogs so BingX is auto-selected for quickstart and detailed/overview log data stays scoped to the selected connection |

@@ -24,6 +24,7 @@ import {
   History,
   Server,
 } from "lucide-react"
+import { useExchange } from "@/lib/exchange-context"
 
 interface Props {
   connectionId?: string
@@ -76,20 +77,22 @@ interface StatsData {
 }
 
 export function QuickstartDetailedDialog({ connectionId = "bingx-x01" }: Props) {
+  const { selectedConnectionId } = useExchange()
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [stats, setStats] = useState<StatsData | null>(null)
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [resolvedConnectionId, setResolvedConnectionId] = useState(connectionId)
+  const effectiveConnectionId = selectedConnectionId || connectionId
 
   const load = async () => {
     setLoading(true)
     try {
-      const candidates = [
-        connectionId,
-        connectionId.startsWith("conn-") ? connectionId.replace(/^conn-/, "") : `conn-${connectionId}`,
-      ]
-      let chosenId = connectionId
+      const candidates = Array.from(new Set([
+        effectiveConnectionId,
+        effectiveConnectionId.startsWith("conn-") ? effectiveConnectionId.replace(/^conn-/, "") : `conn-${effectiveConnectionId}`,
+      ]))
+      let chosenId = effectiveConnectionId
       let statsPayload: Record<string, unknown> = {}
       let logsPayload: Record<string, unknown> = {}
 
@@ -123,7 +126,7 @@ export function QuickstartDetailedDialog({ connectionId = "bingx-x01" }: Props) 
       void load()
     }, 10000)
     return () => clearInterval(timer)
-  }, [open, connectionId])
+  }, [open, effectiveConnectionId])
 
   const grouped = useMemo(() => {
     const overall = logs.filter((l) =>
