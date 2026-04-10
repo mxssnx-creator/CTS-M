@@ -109,6 +109,10 @@ export const RedisConnections = {
     return updated
   },
 
+  async updateConnectionStatus(id: string, status: string, extra: Record<string, any> = {}) {
+    return this.updateConnection(id, { status, ...extra })
+  },
+
   async deleteConnection(id: string) {
     const client = getRedisClient()
     await client.del(`connection:${id}`)
@@ -150,6 +154,18 @@ export const RedisTrades = {
       if (trade) trades.push(trade)
     }
     return trades
+  },
+
+  async updateTrade(tradeId: string, updates: Record<string, any>) {
+    const client = getRedisClient()
+    const existing = await this.getTrade(tradeId)
+    if (!existing || Object.keys(existing).length === 0) {
+      throw new Error("Trade not found")
+    }
+
+    const merged: Record<string, any> = { ...existing, ...updates }
+    await client.hset(`trade:${tradeId}`, merged)
+    return merged
   },
 }
 
@@ -292,6 +308,10 @@ export const RedisMonitoring = {
     await client.lpush("monitoring:events:list", eventId)
     await client.ltrim("monitoring:events:list", 0, 4999) // Keep max 5000 events
     await client.expire(eventId, 2592000) // 30 days
+  },
+
+  async logEvent(eventType: string, eventData?: any) {
+    return this.recordEvent(eventType, eventData)
   },
 
   async getStatistics() {

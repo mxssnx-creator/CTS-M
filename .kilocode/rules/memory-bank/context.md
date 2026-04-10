@@ -27,6 +27,8 @@ The template is a clean Next.js 16 starter with TypeScript and Tailwind CSS 4. I
 - [x] Live trading selection now ranks real strategies and caps executable positions at 500 best candidates
 - [x] Per-set pseudo position limiting is now keyed independently by symbol + config combination + direction to avoid cross-set blocking
 - [x] Comprehensive dev test run completed; current failures are in legacy Redis verification methods and several timeout-prone API endpoints, not in typecheck/lint
+- [x] Added Redis operation compatibility shims and Redis set-based fallback loading for indications/strategies APIs to reduce timeout and empty-response failures
+- [x] Verify-engine and quick-start endpoints now use cleaner active-connection detection and quick-start status handling, but legacy runtime still shows cached verifier method gaps during dev server hot state
 
 ## Current Structure
 
@@ -42,6 +44,8 @@ The template is a clean Next.js 16 starter with TypeScript and Tailwind CSS 4. I
 | `lib/strategy-sets-processor.ts` | Strategy sets with max 250 entries and threshold rearrangement | ✅ Updated |
 | `lib/indication-sets-processor.ts` | Indication sets with position limit per direction | ✅ Updated |
 | `lib/strategy-evaluator.ts` | Set-based stage counting via unique evaluated set keys | ✅ Updated |
+| `lib/redis-operations.ts` | Compatibility shims for legacy verification paths | ✅ Updated |
+| `lib/db-helpers.ts` | Fallback loading from set-based indication/strategy Redis stores | ✅ Updated |
 
 ## Current Focus
 
@@ -54,6 +58,7 @@ The template is ready. Trading dashboard and connection log presentation were im
 5. Strategy engine improvements with stricter profit factor requirements
 6. Prioritized live set selection with 500-position cap for real trading
 7. Investigating legacy verification/API timeout failures surfaced by comprehensive dev testing
+8. Remaining runtime issues are now concentrated in dev-server stale module state and engine/coordinator startup visibility
 
 ## Quick Start Guide
 
@@ -113,3 +118,4 @@ export async function GET() {
 | 2026-04-10 | Strategy engine updates: profit factor thresholds (base 1.2, main 1.4), position limits per direction, Sets-based counting, max 250 entries with threshold rearrangement |
 | 2026-04-10 | Refined strategy set flow: base intake limited per config+direction, main/real chained by set survivors, set counts based on evaluated sets, live trading capped to top 500 |
 | 2026-04-10 | Confirmed per-set pseudo position independence via symbol+config+direction identity and ran comprehensive dev test suite; failures point to unrelated Redis verification method gaps and API timeouts |
+| 2026-04-10 | Added Redis compatibility helpers, set-based API fallbacks, and verify/quick-start endpoint improvements; rerun reduced failures from 5 to 3, with remaining issues tied to stale dev runtime and coordinator visibility |

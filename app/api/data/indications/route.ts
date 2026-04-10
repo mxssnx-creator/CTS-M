@@ -1,7 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { getSession } from "@/lib/auth"
 import { getActiveIndications, getBestPerformingIndications } from "@/lib/db-helpers"
-import { getRedisClient } from "@/lib/redis-db"
 import { loadConnections } from "@/lib/file-storage"
 
 interface Indication {
@@ -115,6 +114,9 @@ async function getRealIndications(connectionId: string): Promise<Indication[]> {
 export async function GET(request: NextRequest) {
   try {
     const user = await getSession()
+    if (!user) {
+      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 })
+    }
 
     const connectionId = request.nextUrl.searchParams.get("connectionId")
     if (!connectionId) {

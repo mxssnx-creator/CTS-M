@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server"
 import { query } from "@/lib/db"
-import { getSettings } from "@/lib/redis-db"
+import { getAllConnections, getSettings, isConnectionReadyForEngine } from "@/lib/redis-db"
 import { getGlobalTradeEngineCoordinator } from "@/lib/trade-engine"
-import { loadConnections } from "@/lib/file-storage"
 
 /**
  * Comprehensive Engine System Verification
@@ -11,8 +10,8 @@ import { loadConnections } from "@/lib/file-storage"
 export async function GET() {
   try {
     const coordinator = getGlobalTradeEngineCoordinator()
-    const connections = loadConnections()
-    const activeConnections = connections.filter((c) => c.is_active === true)
+    const connections = await getAllConnections()
+    const activeConnections = connections.filter((c) => isConnectionReadyForEngine(c) || c.id === "demo-mode")
 
     console.log("[v0] [SystemVerify] Starting comprehensive verification...")
 
@@ -138,7 +137,7 @@ export async function GET() {
     }
 
     // Global verification
-    if (!coordinator.isRunning()) {
+    if (!coordinator.isRunning() && activeConnections.length > 0) {
       systemStatus.verification.issues.push("Global coordinator not running")
       systemStatus.verification.allPhasesPassing = false
     }

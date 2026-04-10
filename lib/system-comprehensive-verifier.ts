@@ -5,7 +5,7 @@
  */
 
 import { RedisConnections, RedisTrades, RedisPositions, RedisCache, RedisMonitoring } from "./redis-operations"
-import { GlobalTradeEngineCoordinator } from "./trade-engine"
+import { GlobalTradeEngineCoordinator, getGlobalTradeEngineCoordinator } from "./trade-engine"
 import { getRedisClient } from "./redis-db"
 
 export interface VerificationResult {
@@ -212,18 +212,20 @@ async function verifyTradeOperations(): Promise<HealthCheck> {
       timestamp: Date.now(),
     }
 
-    await RedisTrades.createTrade(testTradeId, testTrade)
+    await RedisTrades.createTrade("verification", testTrade)
     const trade = await RedisTrades.getTrade(testTradeId)
+    await RedisTrades.updateTrade(testTradeId, { status: "verified" })
+    const updated = await RedisTrades.getTrade(testTradeId)
     await getRedisClient().del(`trade:${testTradeId}`)
 
     const responseTime = Date.now() - startTime
-    const operational = trade?.id === testTradeId
+    const operational = trade?.id === testTradeId && updated?.status === "verified"
 
     return {
       operational,
       responseTime,
       message: "Trade operations operational",
-      details: { tradesTested: 1, createRead: "passed" },
+      details: { tradesTested: 1, createRead: "passed", updateRead: "passed" },
     }
   } catch (error) {
     return {
@@ -276,7 +278,7 @@ async function verifyTradeEngineCoordination(): Promise<HealthCheck> {
   const startTime = Date.now()
   try {
     // Verify GlobalTradeEngineCoordinator is accessible
-    const coordinator = new GlobalTradeEngineCoordinator()
+    const coordinator = getGlobalTradeEngineCoordinator()
 
     // Test that it initializes properly
     const hasInitialize = typeof coordinator.initializeEngine === "function"

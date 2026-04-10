@@ -40,6 +40,25 @@ export async function POST(request: Request) {
     await initRedis()
     const client = getRedisClient()
     const allConnections = await getAllConnections()
+
+    if (action === "status") {
+      const lastRunRaw = await client.get("quickstart:last_run").catch(() => null)
+      let lastRun = null
+      if (typeof lastRunRaw === "string") {
+        try {
+          lastRun = JSON.parse(lastRunRaw)
+        } catch {
+          lastRun = lastRunRaw
+        }
+      }
+
+      return NextResponse.json({
+        success: true,
+        action: "status",
+        connectionCount: allConnections.length,
+        lastRun,
+      })
+    }
     
     console.log(`${LOG_PREFIX}: === QUICKSTART ${action.toUpperCase()} ===`)
     console.log(`${LOG_PREFIX}: Scanning ${allConnections.length} connections...`)
@@ -545,9 +564,10 @@ export async function POST(request: Request) {
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
   const symbol = searchParams.get("symbol")
+  const action = searchParams.get("action") || "enable"
   return POST(new Request(request.url, {
     method: "POST",
     headers: request.headers,
-    body: JSON.stringify({ action: "enable", symbol }),
+    body: JSON.stringify({ action, symbol }),
   }))
 }

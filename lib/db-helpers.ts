@@ -5,6 +5,64 @@
 
 import { getRedisClient } from "@/lib/redis-db"
 
+async function getConnectionStrategySetEntries(connectionId: string): Promise<any[]> {
+  const client = getRedisClient()
+  const keys = await client.keys(`strategy_set:${connectionId}:*`).catch(() => [] as string[])
+  const relevantKeys = keys.filter((key) => !key.endsWith(":stats"))
+
+  const rawSets = await Promise.all(
+    relevantKeys.map(async (key) => {
+      const data = await client.get(key)
+      if (!data) return []
+      try {
+        const parsed = JSON.parse(data)
+        return Array.isArray(parsed) ? parsed.map((entry: any) => ({
+          id: entry.id,
+          connection_id: connectionId,
+          symbol: key.split(":")[2] || entry.symbol || "UNKNOWN",
+          stage: key.split(":").pop() || entry.strategyType || "unknown",
+          profit_factor: Number(entry.profitFactor || 0),
+          win_rate: Number(entry.confidence || 0),
+          ...entry,
+        })) : []
+      } catch {
+        return []
+      }
+    }),
+  )
+
+  return rawSets.flat()
+}
+
+async function getConnectionIndicationSetEntries(connectionId: string): Promise<any[]> {
+  const client = getRedisClient()
+  const keys = await client.keys(`indication_set:${connectionId}:*`).catch(() => [] as string[])
+  const rawSets = await Promise.all(
+    keys.map(async (key) => {
+      const data = await client.get(key)
+      if (!data) return []
+      try {
+        const parsed = JSON.parse(data)
+        return Array.isArray(parsed) ? parsed.map((entry: any) => ({
+          id: entry.id,
+          connection_id: connectionId,
+          symbol: key.split(":")[2] || entry.symbol || "UNKNOWN",
+          indication_type: key.split(":")[3] || entry.type || "unknown",
+          profit_factor: Number(entry.profitFactor || 0),
+          confidence: Number(entry.confidence || 0),
+          direction: entry.direction || "NEUTRAL",
+          timestamp: entry.timestamp || new Date().toISOString(),
+          ...entry,
+        })) : []
+      } catch {
+        return []
+      }
+    }),
+  )
+
+  return rawSets.flat()
+}
+
 // =============================================================================
 // INDICATION QUERIES
 // =============================================================================
@@ -48,9 +106,13 @@ export async function getActiveIndications(
     
     // Filter by connection if needed
     if (connectionId && !symbol) {
-      return filtered.filter((ind: any) => ind.connection_id === connectionId)
+      const scoped = filtered.filter((ind: any) => ind.connection_id === connectionId)
+      if (scoped.length > 0) return scoped
+      return getConnectionIndicationSetEntries(connectionId)
     }
     
+    if (filtered.length > 0) return filtered
+    if (connectionId) return getConnectionIndicationSetEntries(connectionId)
     return filtered
   } catch (error) {
     console.error("[v0] [DB-Helpers] Error getting active indications:", error)
@@ -130,9 +192,13 @@ export async function getActiveStrategies(
     
     // Filter by connection if needed
     if (connectionId && !symbol) {
-      return filtered.filter((strat: any) => strat.connection_id === connectionId)
+      const scoped = filtered.filter((strat: any) => strat.connection_id === connectionId)
+      if (scoped.length > 0) return scoped
+      return getConnectionStrategySetEntries(connectionId)
     }
     
+    if (filtered.length > 0) return filtered
+    if (connectionId) return getConnectionStrategySetEntries(connectionId)
     return filtered
   } catch (error) {
     console.error("[v0] [DB-Helpers] Error getting active strategies:", error)
