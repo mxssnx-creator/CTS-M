@@ -26,6 +26,13 @@ interface ProgressionData {
     successfulTrades?: number
     totalProfit?: number
   }
+  observability?: {
+    recovery?: {
+      stale?: boolean
+      recovered?: boolean
+      recoveryReason?: string | null
+    }
+  }
 }
 
 export function TradeEngineProgression() {
@@ -63,6 +70,10 @@ export function TradeEngineProgression() {
         return "bg-blue-100 text-blue-800"
       case "stopped":
         return "bg-gray-100 text-gray-800"
+      case "recovering":
+        return "bg-amber-100 text-amber-800"
+      case "interrupted":
+        return "bg-red-100 text-red-800"
       case "error":
         return "bg-red-100 text-red-800"
       default:
@@ -75,6 +86,8 @@ export function TradeEngineProgression() {
         case "running":
           return <Zap className="h-4 w-4" />
         case "initializing":
+          return <Clock className="h-4 w-4" />
+        case "recovering":
           return <Clock className="h-4 w-4" />
         case "idle":
           return <TrendingUp className="h-4 w-4" />
@@ -159,6 +172,13 @@ export function TradeEngineProgression() {
                       <span>45%</span>
                     </div>
                     <Progress value={45} className="h-2" />
+                  </div>
+                )}
+
+                {(conn.engineState === "recovering" || conn.engineState === "interrupted" || conn.observability?.recovery?.stale) && (
+                  <div className="rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
+                    {conn.observability?.recovery?.recovered ? "Automatic recovery in progress" : "Realtime flow interruption detected"}
+                    {conn.observability?.recovery?.recoveryReason ? ` - ${conn.observability.recovery.recoveryReason}` : ""}
                   </div>
                 )}
               </div>

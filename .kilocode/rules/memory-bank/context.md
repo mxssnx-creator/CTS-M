@@ -40,6 +40,7 @@ The template is a clean Next.js 16 starter with TypeScript and Tailwind CSS 4. I
 - [x] Verification is now organized into Bun script entrypoints (`verify:offline`, `verify:online`, `verify:all`) and offline coverage now includes observability-heavy main stats and detailed log routes
 - [x] Progression and monitoring flows now detect interrupted/stale realtime activity explicitly, expose interruption flags in progression payloads, and validate systemwide flow endpoints offline to catch no-progression faults before UI/runtime failures
 - [x] Added shared engine resilience logic to assess stale activity and auto-trigger recovery for eligible running connections, reducing interruptions before they surface as user-visible stalled progression states
+- [x] Continuous monitor loop now executes resilience recovery proactively, and key dashboard/live-trading UI surfaces display interrupted/recovering states so prevention and recovery remain visible and systemwide rather than page-specific
 
 ## Current Structure
 
@@ -72,6 +73,9 @@ The template is a clean Next.js 16 starter with TypeScript and Tailwind CSS 4. I
 | `app/api/trade-engine/progression/route.ts` | Connection progression overview now includes observability-backed interruption state | ✅ Updated |
 | `lib/engine-resilience.ts` | Shared stale-flow assessment and automatic engine recovery orchestration | ✅ Added |
 | `app/api/trade-engine/status/route.ts` | Status route now exposes recovery state and performs prevention-aware flow assessment | ✅ Updated |
+| `lib/trade-engine-auto-start.ts` | Monitor loop now runs continuous resilience recovery for enabled connections | ✅ Updated |
+| `components/dashboard/active-connection-card.tsx` | Dashboard active cards now show interrupted and auto-recovery states | ✅ Updated |
+| `components/live-trading/trade-engine-progression.tsx` | Live trading progression cards now surface interruption/recovery status | ✅ Updated |
 
 ## Current Focus
 
@@ -96,6 +100,7 @@ The template is ready. Trading dashboard and connection log presentation were im
 17. Verification is now organized and solid enough for repeatable operator use: offline route coverage includes status, progression, main statistics, and detailed logs, while online checks remain optional when a live server is available
 18. Interrupted and no-progression conditions are now surfaced explicitly across progression and engine-progress APIs instead of silently presenting stalled engines as healthy idle flows
 19. Eligible stalled engines now enter an automatic recovery path with cooldown protection, so interruption prevention is built into status/progression reads rather than relying only on manual restart flows
+20. Interruption prevention is now continuous: the background auto-start monitor proactively triggers resilience recovery, and the UI explicitly shows `recovering`/`interrupted` states so stalled flow is both mitigated and observable
 
 ## Quick Start Guide
 
@@ -167,3 +172,4 @@ export async function GET() {
 | 2026-04-11 | Organized verification into explicit Bun entrypoints and expanded offline route validation to observability-heavy APIs (`main` stats and `trade-engine/detailed-logs`), yielding a stable end-to-end hardening workflow |
 | 2026-04-11 | Added explicit interruption/stale-flow detection to progression APIs, stabilized strategy overview response shape, and expanded offline verification to engine-progress, trade-engine progression, monitoring, and strategy overview routes for systemwide no-progression fault detection |
 | 2026-04-11 | Added shared engine resilience recovery logic that detects stale realtime activity, attempts automatic restart for eligible connections with cooldown protection, and exposes recovery state through status and progression APIs to minimize visible interruptions |
+| 2026-04-11 | Moved interruption prevention into the continuous auto-start monitor loop and surfaced recovery/interruption badges in active connection, monitoring, and live-trading UI components so systemwide recovery is proactive and visible |

@@ -12,6 +12,7 @@ import { getAllConnections, getRedisClient, initRedis, setSettings } from "./red
 import { loadSettingsAsync } from "./settings-storage"
 import { hasConnectionCredentials, isConnectionMainProcessing } from "./connection-state-utils"
 import { logProgressionEvent } from "./engine-progression-logs"
+import { assessAndRecoverConnectionFlow } from "./engine-resilience"
 
 let autoStartInitialized = false
 let autoStartTimer: NodeJS.Timeout | null = null
@@ -270,6 +271,21 @@ function startConnectionMonitoring(): void {
           await coordinator.startAll()
         } catch (startError) {
           console.warn("[v0] [Monitor] Failed to auto-start coordinator:", startError)
+        }
+      }
+
+      for (const connection of enabledConnections) {
+        try {
+          const resilience = await assessAndRecoverConnectionFlow(connection.id)
+          if (resilience.recovered) {
+            await logProgressionEvent(connection.id, "auto_recovery", "info", "Automatic recovery triggered from monitor loop", {
+              connectionId: connection.id,
+              reason: resilience.recoveryReason,
+              lastActivityAt: resilience.lastActivityAt,
+            })
+          }
+        } catch (recoveryError) {
+          console.warn(`[v0] [Monitor] Failed resilience check for ${connection.id}:`, recoveryError)
         }
       }
       

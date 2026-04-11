@@ -10,7 +10,7 @@ import { CheckCircle, AlertCircle, XCircle, Activity, RefreshCw, Play, Square, C
 interface EngineStatus {
   connectionId: string
   connectionName: string
-  status: "running" | "stopped" | "error" | "idle"
+  status: "running" | "stopped" | "error" | "idle" | "interrupted" | "recovering"
   health: {
     overall: "healthy" | "degraded" | "unhealthy"
     components: {
@@ -34,7 +34,9 @@ interface EngineStatus {
     indicationTypes?: { direction?: number; move?: number; active?: number; optimal?: number; auto?: number; total?: number }
     strategyCounts?: { base?: number; main?: number; real?: number }
     realtimeCycles?: number
+    recovery?: { stale?: boolean; recovered?: boolean; recoveryReason?: string | null }
   }
+  recovery?: { stale?: boolean; recovered?: boolean; recoveryReason?: string | null }
 }
 
 interface ComponentHealth {
@@ -88,6 +90,7 @@ export function TradeEngineStatus() {
             cycleTimeMs: 0,
           },
           summary: conn.summary,
+          recovery: conn.recovery,
         }))
         setEnginesStatus(engines)
       }
@@ -256,11 +259,16 @@ export function TradeEngineStatus() {
                   {getHealthIcon(engine.health.overall)}
                   <Badge
                     variant={
-                      engine.status === "running" ? "default" : engine.status === "error" ? "destructive" : "secondary"
+                      engine.status === "running"
+                        ? "default"
+                        : engine.status === "error" || engine.status === "interrupted"
+                          ? "destructive"
+                          : "secondary"
                     }
                   >
                     {engine.status}
                   </Badge>
+                  {engine.recovery?.recovered && <Badge className="bg-amber-100 text-amber-900 hover:bg-amber-100">recovering</Badge>}
                 </div>
               </div>
             </CardHeader>
@@ -306,6 +314,12 @@ export function TradeEngineStatus() {
                   <div><span className="text-muted-foreground">Prehistoric:</span> {engine.summary.prehistoricDataSize || 0}</div>
                   <div><span className="text-muted-foreground">Cycle(ms):</span> {engine.metrics.cycleTimeMs || 0}</div>
                   <div><span className="text-muted-foreground">Realtime Cycles:</span> {engine.summary.realtimeCycles || 0}</div>
+                </div>
+              )}
+              {engine.recovery?.stale && (
+                <div className="rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
+                  {engine.recovery.recovered ? "Auto-recovery triggered" : "Realtime flow is stale"}
+                  {engine.recovery.recoveryReason ? ` - ${engine.recovery.recoveryReason}` : ""}
                 </div>
               )}
               {/* Controls */}

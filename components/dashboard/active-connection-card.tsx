@@ -58,6 +58,7 @@ interface ProgressionData {
     strategiesProcessed: boolean
     liveProcessingActive: boolean
     liveTradingActive: boolean
+    interrupted?: boolean
   }
   error: string | null
   observability?: {
@@ -86,6 +87,8 @@ const PHASE_LABELS: Record<string, string> = {
   strategies: "Calculating Strategies",
   realtime: "Starting Real-time Processor",
   live_trading: "Live Trading Active",
+  interrupted: "Interrupted",
+  recovering: "Recovering",
   stopped: "Stopped",
   error: "Error",
 }
@@ -203,7 +206,7 @@ export function ActiveConnectionCard({
     fetchProgression()
     const interval = setInterval(
       fetchProgression,
-      progression?.phase && progression.phase !== "idle" && progression.phase !== "stopped" && progression.phase !== "live_trading"
+      progression?.phase && !["idle", "stopped", "live_trading", "interrupted"].includes(progression.phase)
         ? 1000
         : 5000
     )
@@ -325,6 +328,8 @@ export function ActiveConnectionCard({
 
   const phase = progression?.phase || "idle"
   const progress = progression?.progress || 0
+  const isInterrupted = phase === "interrupted" || progression?.details?.interrupted
+  const isRecovering = phase === "recovering"
   const isRunning = phase === "live_trading"
   const isStarting = phase !== "idle" && phase !== "stopped" && phase !== "live_trading" && phase !== "error" && progress < 100
   const hasError = phase === "error"
@@ -590,11 +595,15 @@ export function ActiveConnectionCard({
                   <span className="text-muted-foreground font-medium">
                     {PHASE_LABELS[phase] || phase}
                   </span>
-                  <span className="text-muted-foreground tabular-nums">{progress}%</span>
+                  <div className="flex items-center gap-2">
+                    {isRecovering && <Badge className="bg-amber-100 text-amber-900 hover:bg-amber-100">Auto-Recovery</Badge>}
+                    {isInterrupted && <Badge variant="destructive">Interrupted</Badge>}
+                    <span className="text-muted-foreground tabular-nums">{progress}%</span>
+                  </div>
                 </div>
                 <Progress value={progress} className="h-1.5" />
                 {progression?.message && (
-                  <p className="text-[11px] text-muted-foreground truncate">
+                  <p className={`text-[11px] truncate ${isInterrupted ? "text-red-500 font-medium" : "text-muted-foreground"}`}>
                     {progression.message}
                     {progression.subPhase && <span className="ml-1">- {progression.subPhase}</span>}
                   </p>
