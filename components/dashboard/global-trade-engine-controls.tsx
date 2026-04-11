@@ -24,6 +24,10 @@ interface EngineStatus {
     avgPresetCycleDuration: number
     avgOrderCycleDuration: number
   }
+  validation?: {
+    valid: boolean
+    issues: string[]
+  }
 }
 
 export function GlobalTradeEngineControls() {
@@ -72,12 +76,16 @@ export function GlobalTradeEngineControls() {
         const statusData: EngineStatus = {
           running: data.running === true || data.running === "true" || data.status === "running",
           paused: data.paused === true || data.paused === "true",
-          connectedExchanges: data.connectedExchanges || data.summary?.total || 0,
-          activePositions: data.activePositions || data.summary?.totalPositions || 0,
+          connectedExchanges: data.summary?.running || data.connectedExchanges || data.summary?.total || 0,
+          activePositions: data.summary?.totalPositions || data.activePositions || 0,
           totalProfit: data.totalProfit || 0,
           uptime: data.uptime || 0,
           lastUpdate: new Date(data.lastUpdate || Date.now()),
           cycleStats: data.cycleStats,
+          validation: {
+            valid: Array.isArray(data.connections),
+            issues: Array.isArray(data.connections) ? [] : ["missing validated connection status array"],
+          },
         }
         console.log(`[v0] [Engine] Parsed status: running=${statusData.running}, paused=${statusData.paused}`)
         setStatus(statusData)
@@ -250,7 +258,10 @@ export function GlobalTradeEngineControls() {
               Trade Engine
             </CardTitle>
           </div>
-          {getStatusBadge()}
+          <div className="flex items-center gap-2">
+            {status?.validation && <Badge variant={status.validation.valid ? "outline" : "destructive"}>{status.validation.valid ? "valid" : "invalid"}</Badge>}
+            {getStatusBadge()}
+          </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-2">

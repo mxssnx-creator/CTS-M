@@ -12,6 +12,7 @@ import {
 } from "@/lib/connection-state-utils"
 import { buildIndicationStats, buildStrategyStats, getSystemTrackingSnapshot } from "@/lib/dashboard-tracking"
 import { getConnectionObservability } from "@/lib/connection-observability"
+import { validateMainpageOverview } from "@/lib/mainpage-validation"
 
 export const dynamic = "force-dynamic"
 export const revalidate = 0
@@ -189,7 +190,7 @@ export async function GET() {
     
     console.log(`[v0] [SystemStats] Response: exchangeConnections.total=${insertedBaseConnections.length}, debug: base=${baseConnections.length}, enabled=${enabledBase.length}, inserted=${insertedBaseConnections.length}`)
     
-    return NextResponse.json({
+    const responsePayload = {
       success: true,
       tradeEngines: {
         globalStatus,
@@ -250,6 +251,13 @@ export async function GET() {
         insertedBaseConnectionsCount: insertedBaseConnections.length,
         activeInsertedAllCount: activeInsertedAll.length,
       }
+    }
+
+    const validation = validateMainpageOverview(responsePayload)
+
+    return NextResponse.json({
+      ...responsePayload,
+      validation,
     })
   } catch (error) {
     console.error("[v0] [System Stats v3] ERROR:", error)

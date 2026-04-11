@@ -44,8 +44,23 @@ async function run() {
     if (!Array.isArray(payload?.connections)) {
       throw new Error("missing connections array")
     }
+    if (!payload?.success) {
+      throw new Error("trade engine status response not successful")
+    }
     if (payload.connections.some((connection: any) => connection.status === "running" && connection.recovery?.stale)) {
       throw new Error("running connection reported stale recovery state")
+    }
+  })
+
+  await test("main system stats validation", async () => {
+    const { GET } = await import("@/app/api/main/system-stats-v3/route")
+    const response = await GET()
+    if (response.status !== 200) {
+      throw new Error(`expected 200, got ${response.status}`)
+    }
+    const payload = await response.json()
+    if (payload?.validation?.valid !== true) {
+      throw new Error(`mainpage validation failed: ${(payload?.validation?.issues || []).join(", ")}`)
     }
   })
 

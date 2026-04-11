@@ -43,6 +43,7 @@ The template is a clean Next.js 16 starter with TypeScript and Tailwind CSS 4. I
 - [x] Continuous monitor loop now executes resilience recovery proactively, and key dashboard/live-trading UI surfaces display interrupted/recovering states so prevention and recovery remain visible and systemwide rather than page-specific
 - [x] Main-page data widgets now consume a more unified system stats source and shared progression-status normalization, reducing endpoint drift across statistics, exchange progression panels, and live-trading state badges
 - [x] Remaining main-page workflow panels now consume the unified overview/processing relation more directly, reducing drift in processing progress, intervals/strategies fallback values, and connection-level informational status on the dashboard home page
+- [x] Added explicit main-page data validation so consolidated overview payloads self-check their required unique-source fields, and main-page controls/overview panels now expose validated vs invalid data state instead of silently trusting incomplete payloads
 
 ## Current Structure
 
@@ -83,6 +84,9 @@ The template is a clean Next.js 16 starter with TypeScript and Tailwind CSS 4. I
 | `app/api/main/system-stats-v3/route.ts` | Main stats route now includes consolidated overview data for performance, indications, strategies, and symbols | ✅ Updated |
 | `components/dashboard/processing-progress-panel.tsx` | Processing panel now derives its state from the unified overview processing relation | ✅ Updated |
 | `components/dashboard/intervals-strategies-overview.tsx` | Intervals/strategies fallback now uses normalized unified processing values | ✅ Updated |
+| `lib/mainpage-validation.ts` | Shared validation for main-page consolidated overview payload integrity | ✅ Added |
+| `components/dashboard/system-overview.tsx` | Smart Overview now surfaces main-page validation results and data issues | ✅ Updated |
+| `components/dashboard/global-trade-engine-controls.tsx` | Trade engine controls now expose validated status-source state | ✅ Updated |
 
 ## Current Focus
 
@@ -110,6 +114,7 @@ The template is ready. Trading dashboard and connection log presentation were im
 20. Interruption prevention is now continuous: the background auto-start monitor proactively triggers resilience recovery, and the UI explicitly shows `recovering`/`interrupted` states so stalled flow is both mitigated and observable
 21. Main-page processings, values, and informational cards are more coherent because major widgets now share normalized progression labels and a consolidated overview payload rather than combining multiple divergent endpoint heuristics
 22. Dashboard home-page panels are now more organized around one data language: statistics, processing progress, intervals/strategies fallbacks, and progression labels share consolidated system overview data instead of disconnected calculations
+23. Main-page data integrity is now validated at the API boundary and reflected in the UI, helping ensure values shown on the dashboard come from one real, correct, effective consolidated source rather than partially missing payloads
 
 ## Quick Start Guide
 
@@ -184,3 +189,4 @@ export async function GET() {
 | 2026-04-11 | Moved interruption prevention into the continuous auto-start monitor loop and surfaced recovery/interruption badges in active connection, monitoring, and live-trading UI components so systemwide recovery is proactive and visible |
 | 2026-04-11 | Unified main-page data flow further by adding shared progression status normalization and consolidating statistics-overview data onto `system-stats-v3`, reducing inconsistent values and phase labeling across dashboard widgets |
 | 2026-04-11 | Completed another main-page consistency pass by extending `system-stats-v3` with unified processing data and wiring processing/interval-strategy dashboard panels to that consolidated relation, reducing fallback drift and inconsistent values on the home page |
+| 2026-04-11 | Added shared main-page validation for consolidated overview data, extended offline verification to assert dashboard payload validity, and surfaced validated/invalid status in overview and trade-engine controls so the home page reports real, effective data integrity explicitly |

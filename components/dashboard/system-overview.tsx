@@ -42,6 +42,10 @@ interface SystemStats {
     lastHour: number
     topConnections: Array<{ name: string; count: number }>
   }
+  validation?: {
+    valid: boolean
+    issues: string[]
+  }
 }
 
 export function SystemOverview() {
@@ -120,6 +124,10 @@ export function SystemOverview() {
       lastHour: toNumber(raw?.liveTrades?.lastHour, 0),
       topConnections: Array.isArray(raw?.liveTrades?.topConnections) ? raw.liveTrades.topConnections : [],
     },
+    validation: raw?.validation ? {
+      valid: raw.validation.valid === true,
+      issues: Array.isArray(raw.validation.issues) ? raw.validation.issues : [],
+    } : undefined,
   })
 
   useEffect(() => {
@@ -223,7 +231,17 @@ export function SystemOverview() {
         <div className="flex items-center gap-2 mb-4">
           <Settings className="h-5 w-5 text-primary" />
           <h2 className="text-lg font-bold">Smart Overview</h2>
+          {stats.validation && (
+            <Badge variant={stats.validation.valid ? "outline" : "destructive"}>
+              {stats.validation.valid ? "validated" : "data issues"}
+            </Badge>
+          )}
         </div>
+        {stats.validation && !stats.validation.valid && stats.validation.issues.length > 0 && (
+          <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-800">
+            {stats.validation.issues.join("; ")}
+          </div>
+        )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
           {/* Trade Engines */}
