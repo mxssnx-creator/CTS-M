@@ -11,7 +11,7 @@ const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'http
 const DEMO_CONNECTION_ID = 'demo-mode'
 const REAL_CONNECTION_ID = 'bingx-x01'
 
-interface TestResult {
+interface EndpointTestResult {
   endpoint: string
   method: string
   status: 'PASS' | 'FAIL' | 'WARN'
@@ -20,14 +20,14 @@ interface TestResult {
   duration: number
 }
 
-const testResults: TestResult[] = []
+const testResults: EndpointTestResult[] = []
 
 async function test(
   endpoint: string,
   method: string = 'GET',
   expectedStatus: number = 200,
   options?: any,
-): Promise<TestResult> {
+): Promise<EndpointTestResult> {
   const start = Date.now()
 
   try {
@@ -54,7 +54,7 @@ async function test(
     }
 
     const passed = response.status === expectedStatus
-    const result: TestResult = {
+    const result: EndpointTestResult = {
       endpoint,
       method,
       status: passed ? 'PASS' : 'FAIL',
@@ -72,7 +72,7 @@ async function test(
   } catch (error) {
     const duration = Date.now() - start
     const message = error instanceof Error ? error.message : String(error)
-    const result: TestResult = {
+    const result: EndpointTestResult = {
       endpoint,
       method,
       status: 'FAIL',
@@ -98,6 +98,7 @@ async function runTests() {
     }
   } catch (error) {
     console.log('⚠️  API server is not reachable; endpoint verification requires a running app instance.')
+    console.log('    Run `bun scripts/verify-api-routes-offline.ts` for handler-level offline verification.')
     console.log(`    ${error instanceof Error ? error.message : String(error)}`)
     process.exit(0)
   }
@@ -178,8 +179,8 @@ async function runTests() {
   if (failed > 0) {
     console.log('\n❌ Failed Tests:')
     testResults
-      .filter((r: TestResult) => r.status === 'FAIL')
-      .forEach((r: TestResult) => {
+      .filter((r: EndpointTestResult) => r.status === 'FAIL')
+      .forEach((r: EndpointTestResult) => {
         console.log(`  ${r.endpoint} - ${r.message}`)
       })
   }

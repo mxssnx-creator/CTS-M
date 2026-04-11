@@ -269,9 +269,9 @@ if (failedTests === 0) {
   console.log('✓ ALL TESTS PASSED - System is ready for production!');
   console.log('');
   console.log('Next steps:');
-  console.log('  1. npm run dev     (start development server)');
-  console.log('  2. npm run build   (build for production)');
-  console.log('  3. npm start       (start production server)');
+  console.log('  1. bun run dev     (start development server)');
+  console.log('  2. bun run build   (build for production)');
+  console.log('  3. bun run start   (start production server)');
   console.log('='.repeat(80));
   process.exit(0);
 } else {

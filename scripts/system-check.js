@@ -134,9 +134,9 @@ async function main() {
     console.log("=".repeat(50))
     console.log()
     console.log("Ready to run:")
-    console.log("  npm run setup    - Interactive setup")
-    console.log("  npm run dev      - Start development")
-    console.log("  npm run build    - Build for production")
+    console.log("  bun scripts/setup.js            - Interactive setup")
+    console.log("  bun run dev                     - Start development")
+    console.log("  bun run build                   - Build for production")
     process.exit(0)
   } else {
     console.log(`⚠️  System Health: ISSUES FOUND - ${issues} problem(s) detected`)

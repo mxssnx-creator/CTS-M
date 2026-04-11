@@ -174,11 +174,11 @@ LOG_LEVEL=info
   if (shouldBuild) {
     console.log("   Building application...\n")
     try {
-      await runCommand("npm run build")
+      await runCommand("bun run build")
       console.log("   ✅ Build completed successfully\n")
     } catch (error) {
       console.log("   ⚠️  Build encountered errors")
-      console.log("   You can still run in development mode with: npm run dev\n")
+      console.log("   You can still run in development mode with: bun run dev\n")
     }
   }
 
@@ -187,7 +187,7 @@ LOG_LEVEL=info
   console.log("✅ Setup Complete!")
   console.log("=".repeat(50))
   console.log("\nNext steps:")
-  console.log(`  1. Start development server:  npm run dev`)
+  console.log(`  1. Start development server:  bun run dev`)
   console.log(`  2. Open http://localhost:${projectPort}`)
   console.log(`  3. Login with default admin account`)
   console.log("\nDocumentation: https://github.com/your-repo")

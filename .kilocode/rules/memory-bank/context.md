@@ -36,6 +36,7 @@ The template is a clean Next.js 16 starter with TypeScript and Tailwind CSS 4. I
 - [x] Connection progression endpoints and dashboard progression/log dialogs now consume the shared observability relation, exposing consistent log counts, symbol coverage, prehistoric state, and indication/strategy totals inside active-connection cards
 - [x] Observability now recognizes historic vs realtime processing separately from database-backed engine state, timestamps, and structured logs so UIs can show smarter phase-specific tracking and statistics
 - [x] System verification scripts now match the actual Bun/Next/Redis setup, build successfully, initialize at layout startup again, and avoid false API failures when no local server is running during offline verification
+- [x] Added offline route-handler verification for key APIs so workflow checks can validate system health, trade-engine status, and progression logic without depending on a reachable localhost server
 
 ## Current Structure
 
@@ -62,6 +63,7 @@ The template is a clean Next.js 16 starter with TypeScript and Tailwind CSS 4. I
 | `scripts/verify-startup.js` | Startup verification aligned to current Next config and optional DB drivers | ✅ Updated |
 | `scripts/system-check.js` | System health checks aligned to current Next config naming | ✅ Updated |
 | `app/layout.tsx` | Root layout now restores startup initialization on render | ✅ Updated |
+| `scripts/verify-api-routes-offline.ts` | Offline route-level verification for key system APIs | ✅ Added |
 
 ## Current Focus
 
@@ -82,6 +84,7 @@ The template is ready. Trading dashboard and connection log presentation were im
 13. Active connection cards and progression dialogs now expose the same observability-backed counts and prehistoric coverage used by the status/logging APIs
 14. Historic and realtime processing are now detected independently using persisted engine-state fields, structured logs, and last-run timestamps so statistics retrieval is more conformant to actual processing stage
 15. Verification workflow is now reliable again: build uses the local Next binary under Bun, startup checks accept `next.config.ts`, and offline API verification exits cleanly when no sandboxed app URL is reachable
+16. Key workflow verification no longer requires localhost availability because core route handlers can now be executed directly in-process for offline integrity checks
 
 ## Quick Start Guide
 
@@ -149,3 +152,4 @@ export async function GET() {
 | 2026-04-11 | Extended shared observability into progression APIs and active-connection dialogs so dashboard cards, progression logs, and info panels all report the same connection-scoped engine/log/prehistoric/indication/strategy data |
 | 2026-04-11 | Made observability phase-aware for historic vs realtime processing, deriving smarter UI metrics from persisted engine state, structured logs, and last-run timestamps across status, progression, and connection dialogs |
 | 2026-04-11 | Fixed verification and startup workflow mismatches by restoring `initializeApplication()` in `app/layout.tsx`, switching build/start scripts to the local Next binary, and updating legacy verification scripts for `next.config.ts`, optional DB drivers, and unreachable local API checks |
+| 2026-04-11 | Added offline API route verification and converted remaining validation/setup guidance to Bun-based commands so workflow checks remain accurate without a reachable sandbox server |
