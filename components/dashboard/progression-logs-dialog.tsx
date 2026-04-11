@@ -23,6 +23,38 @@ interface ProgressionLogEntry {
   details?: any
 }
 
+interface ObservabilitySummary {
+  counts?: {
+    positions?: number
+    trades?: number
+    indications?: number
+    strategies?: number
+    logs?: number
+  }
+  engine?: {
+    status?: string
+    indicationCycles?: number
+    strategyCycles?: number
+    realtimeCycles?: number
+    activeSymbols?: number
+  }
+  indications?: Record<string, number>
+  strategies?: Record<string, number>
+  prehistoric?: {
+    loaded?: boolean
+    symbols?: number
+    candlesProcessed?: number
+    indicationResults?: number
+    strategyPositions?: number
+    errors?: number
+  }
+  logSummary?: {
+    total?: number
+    warning?: number
+    error?: number
+  }
+}
+
 interface ProgressionLogsDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -40,6 +72,7 @@ export function ProgressionLogsDialog({
 }: ProgressionLogsDialogProps) {
   const [logs, setLogs] = useState<ProgressionLogEntry[]>([])
   const [progressionState, setProgressionState] = useState<any>(null)
+  const [observability, setObservability] = useState<ObservabilitySummary | null>(null)
   const [isLoading, setIsLoading] = useState(false)
 
   useEffect(() => {
@@ -57,6 +90,7 @@ export function ProgressionLogsDialog({
         const data = await response.json()
         setLogs(data.logs || [])
         setProgressionState(data.progressionState || null)
+        setObservability(data.observability || null)
       } else {
         // Fallback: try to get logs from progression endpoint
         const progResponse = await fetch(`/api/connections/progression/${connectionId}`)
@@ -64,6 +98,7 @@ export function ProgressionLogsDialog({
           const progData = await progResponse.json()
           setLogs(progData.recentLogs || [])
           setProgressionState(progData.state || null)
+          setObservability(progData.observability || null)
         }
       }
     } catch (error) {
@@ -133,6 +168,31 @@ export function ProgressionLogsDialog({
             <div className="text-center">
               <div className="text-lg font-semibold">{(progressionState.cycleSuccessRate || 0).toFixed(1)}%</div>
               <div className="text-xs text-muted-foreground">Success Rate</div>
+            </div>
+          </div>
+        )}
+
+        {observability && (
+          <div className="mx-6 mb-4 grid grid-cols-2 gap-3 rounded-lg border bg-background p-3 text-xs md:grid-cols-5">
+            <div className="text-center">
+              <div className="text-lg font-semibold capitalize">{observability.engine?.status || "stopped"}</div>
+              <div className="text-xs text-muted-foreground">Engine</div>
+            </div>
+            <div className="text-center">
+              <div className="text-lg font-semibold">{observability.prehistoric?.symbols || 0}</div>
+              <div className="text-xs text-muted-foreground">Prehistoric Symbols</div>
+            </div>
+            <div className="text-center">
+              <div className="text-lg font-semibold">{observability.counts?.indications || 0}</div>
+              <div className="text-xs text-muted-foreground">Indications</div>
+            </div>
+            <div className="text-center">
+              <div className="text-lg font-semibold">{observability.counts?.strategies || 0}</div>
+              <div className="text-xs text-muted-foreground">Strategies</div>
+            </div>
+            <div className="text-center">
+              <div className="text-lg font-semibold">{observability.logSummary?.total || logs.length}</div>
+              <div className="text-xs text-muted-foreground">Related Logs</div>
             </div>
           </div>
         )}

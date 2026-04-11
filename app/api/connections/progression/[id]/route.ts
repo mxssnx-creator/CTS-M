@@ -3,6 +3,7 @@ import { initRedis, getRedisClient, getSettings, getConnection } from "@/lib/red
 import { getProgressionLogs, forceFlushLogs } from "@/lib/engine-progression-logs"
 import { ProgressionStateManager } from "@/lib/progression-state-manager"
 import { getGlobalTradeEngineCoordinator } from "@/lib/trade-engine"
+import { getConnectionObservability } from "@/lib/connection-observability"
 
 export const dynamic = "force-dynamic"
 
@@ -68,22 +69,11 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     
     // Get progression state (cycles, success rates)
     const progressionState = await ProgressionStateManager.getProgressionState(connectionId)
+    const observability = await getConnectionObservability(connectionId)
     
     // Count indications processed for this connection
-    let indicationsCount = 0
-    let strategiesCount = 0
-    try {
-      indicationsCount =
-        toNumber(await client.get(`indications:${connectionId}:count`).catch(() => 0)) ||
-        (await client.keys(`indications:${connectionId}:*`).catch(() => [])).length
-
-      strategiesCount =
-        toNumber(await client.get(`strategies:${connectionId}:count`).catch(() => 0)) ||
-        (await client.keys(`strategies:${connectionId}:*`).catch(() => [])).length
-    } catch {
-      indicationsCount = 0
-      strategiesCount = 0
-    }
+    const indicationsCount = observability.counts.indications
+    const strategiesCount = observability.counts.strategies
     
     // Check for actual running evidence from cycle counts in engine state
     const indicationCycleCount = engineState?.indication_cycle_count || 0
@@ -219,7 +209,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         startedAt: globalState?.started_at || engineState?.started_at || null,
         updatedAt: progression?.updated_at || engineState?.last_indication_run || new Date().toISOString(),
         details: {
-          historicalDataLoaded: currentIdx >= 3 || (progressionState.prehistoricCyclesCompleted || 0) > 0,
+          historicalDataLoaded: currentIdx >= 3 || observability.prehistoric.loaded || (progressionState.prehistoricCyclesCompleted || 0) > 0,
           indicationsCalculated: currentIdx >= 4 || engineRunning || indicationsCount > 0,
           strategiesProcessed: currentIdx >= 5 || engineRunning || strategiesCount > 0,
           liveProcessingActive: currentIdx >= 5 || engineRunning,
@@ -228,15 +218,15 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         error: phase === "error" ? detail : null,
       },
       state: {
-        cyclesCompleted: progressionState.cyclesCompleted,
-        successfulCycles: progressionState.successfulCycles,
-        failedCycles: progressionState.failedCycles,
-        cycleSuccessRate: Math.round(progressionState.cycleSuccessRate * 10) / 10,
-        totalTrades: progressionState.totalTrades,
-        successfulTrades: progressionState.successfulTrades,
-        totalProfit: progressionState.totalProfit,
-        tradeSuccessRate: Math.round((progressionState.tradeSuccessRate ?? 0) * 10) / 10,
-        lastCycleTime: progressionState.lastCycleTime?.toISOString() || null,
+        cyclesCompleted: observability.progression.cyclesCompleted,
+        successfulCycles: observability.progression.successfulCycles,
+        failedCycles: observability.progression.failedCycles,
+        cycleSuccessRate: Math.round(observability.progression.cycleSuccessRate * 10) / 10,
+        totalTrades: observability.progression.totalTrades,
+        successfulTrades: observability.progression.successfulTrades,
+        totalProfit: observability.progression.totalProfit,
+        tradeSuccessRate: Math.round(observability.progression.tradeSuccessRate * 10) / 10,
+        lastCycleTime: observability.progression.lastCycleTime,
         prehistoricCyclesCompleted: progressionState.prehistoricCyclesCompleted,
         prehistoricPhaseActive: progressionState.prehistoricPhaseActive,
       },
@@ -255,15 +245,23 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         cycleTimeMs: toNumber(engineState?.last_cycle_duration),
         totalStrategiesEvaluated: toNumber(engineState?.total_strategies_evaluated),
         totalIndicationsEvaluated: toNumber(engineState?.total_indications_evaluated),
-        prehistoricSymbolsTotal: toNumber(engineState?.config_set_symbols_total),
-        prehistoricSymbolsProcessed: toNumber(engineState?.config_set_symbols_processed),
-        prehistoricCandlesProcessed: toNumber(engineState?.config_set_candles_processed),
-        prehistoricIndicationResults: toNumber(engineState?.config_set_indication_results),
-        prehistoricStrategyPositions: toNumber(engineState?.config_set_strategy_positions),
-        prehistoricErrors: toNumber(engineState?.config_set_errors),
-        progressionCyclesCompleted: progressionState.cyclesCompleted,
+        prehistoricSymbolsTotal: Math.max(toNumber(engineState?.config_set_symbols_total), observability.prehistoric.symbols),
+        prehistoricSymbolsProcessed: observability.prehistoric.symbols,
+        prehistoricCandlesProcessed: observability.prehistoric.candlesProcessed,
+        prehistoricIndicationResults: observability.prehistoric.indicationResults,
+        prehistoricStrategyPositions: observability.prehistoric.strategyPositions,
+        prehistoricErrors: observability.prehistoric.errors,
+        progressionCyclesCompleted: observability.progression.cyclesCompleted,
         lastIndicationRun: engineState?.last_indication_run || null,
         lastStrategyRun: engineState?.last_strategy_run || null,
+      },
+      observability: {
+        counts: observability.counts,
+        engine: observability.engine,
+        indications: observability.indications,
+        strategies: observability.strategies,
+        prehistoric: observability.prehistoric,
+        logSummary: observability.logSummary,
       },
       recentLogs: recentLogs.slice(0, 20).map(log => ({
         timestamp: log.timestamp,

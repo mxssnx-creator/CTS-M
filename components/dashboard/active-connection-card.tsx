@@ -60,6 +60,21 @@ interface ProgressionData {
     liveTradingActive: boolean
   }
   error: string | null
+  observability?: {
+    counts?: {
+      indications?: number
+      strategies?: number
+      logs?: number
+    }
+    engine?: {
+      status?: string
+      activeSymbols?: number
+    }
+    prehistoric?: {
+      loaded?: boolean
+      symbols?: number
+    }
+  }
 }
 
 const PHASE_LABELS: Record<string, string> = {
@@ -737,8 +752,8 @@ export function ActiveConnectionCard({
                     </div>
                     <div>
                       <div className="text-muted-foreground mb-0.5">Historical</div>
-                      <Badge variant={progression.details?.historicalDataLoaded ? "default" : "secondary"} className="text-[10px]">
-                        {progression.details?.historicalDataLoaded ? "Loaded" : "Pending"}
+                      <Badge variant={progression.observability?.prehistoric?.loaded || progression.details?.historicalDataLoaded ? "default" : "secondary"} className="text-[10px]">
+                        {progression.observability?.prehistoric?.loaded || progression.details?.historicalDataLoaded ? "Loaded" : "Pending"}
                       </Badge>
                     </div>
                     <div>
@@ -764,6 +779,22 @@ export function ActiveConnectionCard({
                       <Badge variant={progression.details?.liveTradingActive ? "default" : "secondary"} className="text-[10px]">
                         {progression.details?.liveTradingActive ? "Active" : "Pending"}
                       </Badge>
+                    </div>
+                    <div>
+                      <div className="text-muted-foreground mb-0.5">Tracked Logs</div>
+                      <div className="font-medium">{progression.observability?.counts?.logs || 0}</div>
+                    </div>
+                    <div>
+                      <div className="text-muted-foreground mb-0.5">Indications</div>
+                      <div className="font-medium">{progression.observability?.counts?.indications || 0}</div>
+                    </div>
+                    <div>
+                      <div className="text-muted-foreground mb-0.5">Strategies</div>
+                      <div className="font-medium">{progression.observability?.counts?.strategies || 0}</div>
+                    </div>
+                    <div>
+                      <div className="text-muted-foreground mb-0.5">Symbols</div>
+                      <div className="font-medium">{progression.observability?.engine?.activeSymbols || 0}</div>
                     </div>
                   </div>
                 </div>
