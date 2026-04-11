@@ -42,6 +42,7 @@ The template is a clean Next.js 16 starter with TypeScript and Tailwind CSS 4. I
 - [x] Added shared engine resilience logic to assess stale activity and auto-trigger recovery for eligible running connections, reducing interruptions before they surface as user-visible stalled progression states
 - [x] Continuous monitor loop now executes resilience recovery proactively, and key dashboard/live-trading UI surfaces display interrupted/recovering states so prevention and recovery remain visible and systemwide rather than page-specific
 - [x] Main-page data widgets now consume a more unified system stats source and shared progression-status normalization, reducing endpoint drift across statistics, exchange progression panels, and live-trading state badges
+- [x] Remaining main-page workflow panels now consume the unified overview/processing relation more directly, reducing drift in processing progress, intervals/strategies fallback values, and connection-level informational status on the dashboard home page
 
 ## Current Structure
 
@@ -80,6 +81,8 @@ The template is a clean Next.js 16 starter with TypeScript and Tailwind CSS 4. I
 | `lib/progression-status.ts` | Shared progression phase normalization for consistent UI and API labeling | ✅ Added |
 | `components/dashboard/statistics-overview-v2.tsx` | Main statistics widget now reads a unified system stats overview payload | ✅ Updated |
 | `app/api/main/system-stats-v3/route.ts` | Main stats route now includes consolidated overview data for performance, indications, strategies, and symbols | ✅ Updated |
+| `components/dashboard/processing-progress-panel.tsx` | Processing panel now derives its state from the unified overview processing relation | ✅ Updated |
+| `components/dashboard/intervals-strategies-overview.tsx` | Intervals/strategies fallback now uses normalized unified processing values | ✅ Updated |
 
 ## Current Focus
 
@@ -106,6 +109,7 @@ The template is ready. Trading dashboard and connection log presentation were im
 19. Eligible stalled engines now enter an automatic recovery path with cooldown protection, so interruption prevention is built into status/progression reads rather than relying only on manual restart flows
 20. Interruption prevention is now continuous: the background auto-start monitor proactively triggers resilience recovery, and the UI explicitly shows `recovering`/`interrupted` states so stalled flow is both mitigated and observable
 21. Main-page processings, values, and informational cards are more coherent because major widgets now share normalized progression labels and a consolidated overview payload rather than combining multiple divergent endpoint heuristics
+22. Dashboard home-page panels are now more organized around one data language: statistics, processing progress, intervals/strategies fallbacks, and progression labels share consolidated system overview data instead of disconnected calculations
 
 ## Quick Start Guide
 
@@ -179,3 +183,4 @@ export async function GET() {
 | 2026-04-11 | Added shared engine resilience recovery logic that detects stale realtime activity, attempts automatic restart for eligible connections with cooldown protection, and exposes recovery state through status and progression APIs to minimize visible interruptions |
 | 2026-04-11 | Moved interruption prevention into the continuous auto-start monitor loop and surfaced recovery/interruption badges in active connection, monitoring, and live-trading UI components so systemwide recovery is proactive and visible |
 | 2026-04-11 | Unified main-page data flow further by adding shared progression status normalization and consolidating statistics-overview data onto `system-stats-v3`, reducing inconsistent values and phase labeling across dashboard widgets |
+| 2026-04-11 | Completed another main-page consistency pass by extending `system-stats-v3` with unified processing data and wiring processing/interval-strategy dashboard panels to that consolidated relation, reducing fallback drift and inconsistent values on the home page |

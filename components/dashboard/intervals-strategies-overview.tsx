@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Clock, TrendingUp, Activity, Zap, CheckCircle, AlertCircle, RefreshCw } from "lucide-react"
+import { normalizeProgressionStatus } from "@/lib/progression-status"
 
 interface IntervalHealth {
   enabled: boolean
@@ -79,11 +80,11 @@ export function IntervalsStrategiesOverview({ connections }: { connections: any[
         const statsRes = await fetch("/api/main/system-stats-v3").catch(() => null)
         if (statsRes?.ok) {
           const statsData = await statsRes.json()
-          const phases = statsData.workflowPhases || []
+          const normalized = normalizeProgressionStatus(statsData?.overview?.processing?.progression?.phase)
           const fallbackStrategies: StrategyStats[] = [
-            { type: "base", enabled: true, rangeCount: 0, activePositions: statsData.activeConnections?.total || 0, totalIndications: 0, successRate: 0 },
-            { type: "main", enabled: statsData.tradeEngines?.mainEnabled || false, rangeCount: 0, activePositions: statsData.activeConnections?.active || 0, totalIndications: 0, successRate: 0 },
-            { type: "real", enabled: statsData.tradeEngines?.liveTradeEnabled || false, rangeCount: 0, activePositions: statsData.activeConnections?.liveTrade || 0, totalIndications: 0, successRate: 0 },
+            { type: "base", enabled: true, rangeCount: 0, activePositions: statsData.activeConnections?.total || 0, totalIndications: statsData?.overview?.processing?.indications?.direction || 0, successRate: normalized.isInterrupted ? 0 : 100 },
+            { type: "main", enabled: statsData.tradeEngines?.mainEnabled || false, rangeCount: 0, activePositions: statsData.activeConnections?.active || 0, totalIndications: statsData?.overview?.processing?.indications?.move || 0, successRate: normalized.isRecovering ? 50 : 100 },
+            { type: "real", enabled: statsData.tradeEngines?.liveTradeEnabled || false, rangeCount: 0, activePositions: statsData.activeConnections?.liveTrade || 0, totalIndications: statsData?.overview?.processing?.indications?.active || 0, successRate: normalized.isInterrupted ? 0 : 100 },
           ]
           setStrategies(fallbackStrategies)
         }

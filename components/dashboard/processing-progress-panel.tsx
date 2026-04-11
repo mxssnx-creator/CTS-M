@@ -5,9 +5,44 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Activity, BarChart3, TrendingUp, Zap } from 'lucide-react'
 import type { ProcessingMetrics } from '@/lib/processing-metrics'
+import { normalizeProgressionStatus } from '@/lib/progression-status'
 
 interface ProcessingProgressPanelProps {
   connectionId?: string
+}
+
+interface UnifiedProcessingOverview {
+  overview?: {
+    processing?: {
+      connectionId?: string
+      progression?: {
+        phase?: string
+        cycleSuccessRate?: number
+        totalTrades?: number
+      }
+      phases?: {
+        historic?: {
+          isLoaded?: boolean
+          isProcessing?: boolean
+          symbolsProcessed?: number
+          symbolsTotal?: number
+        }
+        realtime?: {
+          isActive?: boolean
+          isStale?: boolean
+          cycles?: {
+            realtime?: number
+          }
+          positions?: number
+        }
+      }
+      counts?: {
+        logs?: number
+      }
+      strategies?: Record<string, number>
+      indications?: Record<string, number>
+    } | null
+  }
 }
 
 export function ProcessingProgressPanel({ connectionId }: ProcessingProgressPanelProps) {
@@ -23,16 +58,73 @@ export function ProcessingProgressPanel({ connectionId }: ProcessingProgressPane
 
     const fetchMetrics = async () => {
       try {
-        const response = await fetch(`/api/metrics/processing?connectionId=${encodeURIComponent(connectionId)}`)
+        const response = await fetch(`/api/main/system-stats-v3`)
         if (!response.ok) {
-          throw new Error('Failed to fetch metrics')
+          throw new Error('Failed to fetch processing overview')
         }
-        const data = await response.json()
-        if (data.success) {
-          setMetrics(data.data.current)
+        const data = await response.json() as UnifiedProcessingOverview
+        const processing = data.overview?.processing
+        if (processing && processing.connectionId === connectionId) {
+          const normalized = normalizeProgressionStatus(processing.progression?.phase)
+          setMetrics({
+            timestamp: new Date().toISOString(),
+            phases: {
+              prehistoric: {
+                status: processing.phases?.historic?.isLoaded ? 'completed' : processing.phases?.historic?.isProcessing ? 'running' : 'idle',
+                cycleCount: 0,
+                progress: processing.phases?.historic?.symbolsTotal ? ((processing.phases.historic.symbolsProcessed || 0) / processing.phases.historic.symbolsTotal) * 100 : 0,
+                itemsProcessed: processing.phases?.historic?.symbolsProcessed || 0,
+                itemsTotal: processing.phases?.historic?.symbolsTotal || 0,
+                currentTimeframe: 'historical',
+                duration: 0,
+              },
+              realtime: {
+                status: normalized.isInterrupted ? 'error' : processing.phases?.realtime?.isActive ? 'running' : 'idle',
+                cycleCount: processing.phases?.realtime?.cycles?.realtime || 0,
+                progress: normalized.isRecovering ? 40 : processing.phases?.realtime?.isActive ? 100 : 0,
+                itemsProcessed: processing.phases?.realtime?.positions || 0,
+                itemsTotal: Math.max(processing.phases?.realtime?.positions || 0, 1),
+                currentTimeframe: normalized.label,
+                duration: 0,
+                errorMessage: normalized.isInterrupted ? 'Realtime flow interrupted' : undefined,
+              },
+              indication: {
+                status: (processing.indications?.direction || 0) > 0 ? 'running' : 'idle',
+                cycleCount: 0,
+                progress: Math.min((processing.indications?.direction || 0) + (processing.indications?.move || 0), 100),
+                itemsProcessed: (processing.indications?.direction || 0) + (processing.indications?.move || 0),
+                itemsTotal: Math.max((processing.indications?.active || 0) + (processing.indications?.optimal || 0), 1),
+                currentTimeframe: 'signals',
+                duration: 0,
+              },
+              strategy: {
+                status: ((processing.strategies?.base || 0) + (processing.strategies?.main || 0) + (processing.strategies?.real || 0)) > 0 ? 'running' : 'idle',
+                cycleCount: 0,
+                progress: Math.min((processing.strategies?.live || 0) * 10, 100),
+                itemsProcessed: (processing.strategies?.base || 0) + (processing.strategies?.main || 0) + (processing.strategies?.real || 0),
+                itemsTotal: Math.max((processing.strategies?.live || 0), 1),
+                currentTimeframe: 'strategy',
+                duration: 0,
+              },
+            },
+            performanceMetrics: {
+              avgCycleDuration: 0,
+              totalProcessingTime: 0,
+            },
+            pseudoPositions: {
+              totalCreated: processing.progression?.totalTrades || 0,
+              currentActive: processing.phases?.realtime?.positions || 0,
+            },
+            evaluationCounts: {
+              indicationBase: processing.indications?.direction || 0,
+              indicationMain: processing.indications?.move || 0,
+              strategyBase: processing.strategies?.base || 0,
+              strategyMain: processing.strategies?.main || 0,
+            },
+          } as ProcessingMetrics)
           setError(null)
         } else {
-          setError(data.error)
+          setError('No unified processing data yet. Start the engine and enable a connection to see progress.')
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unknown error')
@@ -71,7 +163,7 @@ export function ProcessingProgressPanel({ connectionId }: ProcessingProgressPane
           <div className="text-xs text-slate-400">
             {error ? `Error: ${error}` : 'No processing data yet. Start the engine and enable a connection to see progress.'}
           </div>
-          {['Prehistoric', 'Realtime', 'Indication', 'Strategy'].map((phase) => (
+             {['Prehistoric', 'Realtime', 'Indication', 'Strategy'].map((phase) => (
             <div key={phase} className="flex items-center justify-between p-2 rounded bg-slate-800/50">
               <span className="text-xs text-slate-400">{phase}</span>
               <Badge variant="outline" className="text-[10px] py-0 bg-slate-700 text-slate-400 border-slate-600">

@@ -11,6 +11,7 @@ import {
   isTruthyFlag,
 } from "@/lib/connection-state-utils"
 import { buildIndicationStats, buildStrategyStats, getSystemTrackingSnapshot } from "@/lib/dashboard-tracking"
+import { getConnectionObservability } from "@/lib/connection-observability"
 
 export const dynamic = "force-dynamic"
 export const revalidate = 0
@@ -123,6 +124,8 @@ export async function GET() {
       buildStrategyStats(),
       buildIndicationStats(),
     ])
+    const primaryConnectionId = activeInsertedAll[0]?.id || enabledDashboard[0]?.id || null
+    const primaryObservability = primaryConnectionId ? await getConnectionObservability(primaryConnectionId) : null
 
     const overview = {
       performance: {
@@ -173,6 +176,15 @@ export async function GET() {
           profitFactor250: 0,
           profitFactor50: 0,
         })),
+      processing: primaryObservability ? {
+        connectionId: primaryConnectionId,
+        progression: primaryObservability.progression,
+        phases: primaryObservability.phases,
+        counts: primaryObservability.counts,
+        logSummary: primaryObservability.logSummary,
+        strategies: primaryObservability.strategies,
+        indications: primaryObservability.indications,
+      } : null,
     }
     
     console.log(`[v0] [SystemStats] Response: exchangeConnections.total=${insertedBaseConnections.length}, debug: base=${baseConnections.length}, enabled=${enabledBase.length}, inserted=${insertedBaseConnections.length}`)
