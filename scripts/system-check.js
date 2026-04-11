@@ -34,6 +34,10 @@ function checkFile(file) {
   return fs.existsSync(file)
 }
 
+function checkAnyFile(files) {
+  return files.some((file) => fs.existsSync(file))
+}
+
 async function main() {
   let issues = 0
 
@@ -77,12 +81,15 @@ async function main() {
 
   // Critical files
   console.log("5. Critical Files")
-  const files = ["package.json", "next.config.mjs", "tsconfig.json", ".gitignore"]
+  const files = ["package.json", "tsconfig.json", ".gitignore"]
   files.forEach((file) => {
     const exists = checkFile(file)
     console.log(`   ${file}: ${exists ? "✅" : "❌"}`)
     if (!exists) issues++
   })
+  const nextConfigExists = checkAnyFile(["next.config.ts", "next.config.mjs", "next.config.js"])
+  console.log(`   next.config.*: ${nextConfigExists ? "✅" : "❌"}`)
+  if (!nextConfigExists) issues++
   console.log()
 
   // Environment configuration

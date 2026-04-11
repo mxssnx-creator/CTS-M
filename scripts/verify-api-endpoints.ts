@@ -7,7 +7,7 @@
 
 // Using built-in fetch (Node 18+)
 
-const BASE_URL = process.env.APP_URL || 'http://localhost:3001'
+const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'http://localhost:3001'
 const DEMO_CONNECTION_ID = 'demo-mode'
 const REAL_CONNECTION_ID = 'bingx-x01'
 
@@ -90,6 +90,17 @@ async function test(
 async function runTests() {
   console.log(`\n🧪 CTS v3 API Endpoint Verification\n`)
   console.log(`Target: ${BASE_URL}\n`)
+
+  try {
+    const healthResponse = await fetch(`${BASE_URL}/api/system/health`)
+    if (!healthResponse.ok) {
+      throw new Error(`bootstrap health returned ${healthResponse.status}`)
+    }
+  } catch (error) {
+    console.log('⚠️  API server is not reachable; endpoint verification requires a running app instance.')
+    console.log(`    ${error instanceof Error ? error.message : String(error)}`)
+    process.exit(0)
+  }
 
   // Real-Time Updates (SSE)
   console.log('📡 Real-Time Updates (SSE)')

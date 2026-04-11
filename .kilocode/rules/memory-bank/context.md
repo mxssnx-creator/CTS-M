@@ -35,6 +35,7 @@ The template is a clean Next.js 16 starter with TypeScript and Tailwind CSS 4. I
 - [x] Added a shared connection observability layer so engine tracking, prehistoric progress, logs, indications, and strategy counts resolve from one relation and stay consistent across main status APIs and info dialogs
 - [x] Connection progression endpoints and dashboard progression/log dialogs now consume the shared observability relation, exposing consistent log counts, symbol coverage, prehistoric state, and indication/strategy totals inside active-connection cards
 - [x] Observability now recognizes historic vs realtime processing separately from database-backed engine state, timestamps, and structured logs so UIs can show smarter phase-specific tracking and statistics
+- [x] System verification scripts now match the actual Bun/Next/Redis setup, build successfully, initialize at layout startup again, and avoid false API failures when no local server is running during offline verification
 
 ## Current Structure
 
@@ -58,6 +59,9 @@ The template is a clean Next.js 16 starter with TypeScript and Tailwind CSS 4. I
 | `lib/connection-observability.ts` | Unified relation model for engine tracking, logs, prehistoric info, indications, and strategies | ✅ Added |
 | `app/api/connections/progression/[id]/route.ts` | Progression API enriched with observability-backed metrics for dashboard cards | ✅ Updated |
 | `app/api/trade-engine/status/route.ts` | Status API now exposes phase-aware historic/realtime observability | ✅ Updated |
+| `scripts/verify-startup.js` | Startup verification aligned to current Next config and optional DB drivers | ✅ Updated |
+| `scripts/system-check.js` | System health checks aligned to current Next config naming | ✅ Updated |
+| `app/layout.tsx` | Root layout now restores startup initialization on render | ✅ Updated |
 
 ## Current Focus
 
@@ -77,6 +81,7 @@ The template is ready. Trading dashboard and connection log presentation were im
 12. Main-page and dialog consumers now share one observability relation to prevent engine/log/info drift between status cards, detailed logging, and connection information panels
 13. Active connection cards and progression dialogs now expose the same observability-backed counts and prehistoric coverage used by the status/logging APIs
 14. Historic and realtime processing are now detected independently using persisted engine-state fields, structured logs, and last-run timestamps so statistics retrieval is more conformant to actual processing stage
+15. Verification workflow is now reliable again: build uses the local Next binary under Bun, startup checks accept `next.config.ts`, and offline API verification exits cleanly when no sandboxed app URL is reachable
 
 ## Quick Start Guide
 
@@ -143,3 +148,4 @@ export async function GET() {
 | 2026-04-11 | Added shared connection observability composition, updated trade-engine status/detail routes to expose consistent per-connection tracking/log/info data, and expanded the connection info dialog with unified engine relation metrics |
 | 2026-04-11 | Extended shared observability into progression APIs and active-connection dialogs so dashboard cards, progression logs, and info panels all report the same connection-scoped engine/log/prehistoric/indication/strategy data |
 | 2026-04-11 | Made observability phase-aware for historic vs realtime processing, deriving smarter UI metrics from persisted engine state, structured logs, and last-run timestamps across status, progression, and connection dialogs |
+| 2026-04-11 | Fixed verification and startup workflow mismatches by restoring `initializeApplication()` in `app/layout.tsx`, switching build/start scripts to the local Next binary, and updating legacy verification scripts for `next.config.ts`, optional DB drivers, and unreachable local API checks |

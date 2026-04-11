@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 // @ts-expect-error CSS import not typed
 import "@/app/globals.css"
 import { Providers } from "@/components/providers"
+import { initializeApplication } from "@/lib/init-app"
 
 export const metadata: Metadata = {
   title: "CTS v3.2 Dashboard",
@@ -10,11 +11,13 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic"
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
+  await initializeApplication()
+
   return (
     <html lang="en" suppressHydrationWarning>
       <body className="font-sans">

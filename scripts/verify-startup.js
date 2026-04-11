@@ -8,6 +8,10 @@
 const fs = require('fs');
 const path = require('path');
 
+function fileExistsAny(paths) {
+  return paths.some((file) => fs.existsSync(path.join(process.cwd(), file)));
+}
+
 console.log('='.repeat(80));
 console.log('CTS v3.1 - Pre-Startup Verification');
 console.log('='.repeat(80));
@@ -47,7 +51,6 @@ console.log('');
 console.log('✓ Checking critical files...');
 const criticalFiles = [
   'package.json',
-  'next.config.mjs',
   'tsconfig.json',
   'lib/db.ts',
   'lib/init-app.ts',
@@ -64,6 +67,13 @@ criticalFiles.forEach(file => {
     console.log(`  ✓ ${file}`);
   }
 });
+
+if (fileExistsAny(['next.config.ts', 'next.config.mjs', 'next.config.js'])) {
+  console.log('  ✓ next.config.*');
+} else {
+  console.log('  ✗ Missing: next.config.ts|mjs|js');
+  hasErrors = true;
+}
 
 // Check 3: Environment configuration
 console.log('');
@@ -98,8 +108,6 @@ if (!fs.existsSync(nodeModules)) {
   const criticalPackages = [
     'next',
     'react',
-    'better-sqlite3',
-    'postgres',
     'sonner'
   ];
   
@@ -108,6 +116,14 @@ if (!fs.existsSync(nodeModules)) {
     if (!fs.existsSync(pkgPath)) {
       console.log(`  ⚠ Missing package: ${pkg}`);
       hasWarnings = true;
+    }
+  });
+
+  const optionalPackages = ['better-sqlite3', 'postgres'];
+  optionalPackages.forEach(pkg => {
+    const pkgPath = path.join(nodeModules, pkg);
+    if (!fs.existsSync(pkgPath)) {
+      console.log(`  ℹ Optional package not installed: ${pkg}`);
     }
   });
 }

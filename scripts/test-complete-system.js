@@ -117,9 +117,12 @@ console.log('');
 console.log('Phase 3: Configuration Files');
 console.log('-'.repeat(80));
 
-test('next.config.mjs exists', () => {
-  if (!fs.existsSync(path.join(process.cwd(), 'next.config.mjs'))) {
-    throw new Error('next.config.mjs not found');
+test('next.config exists', () => {
+  const hasNextConfig = ['next.config.ts', 'next.config.mjs', 'next.config.js'].some((file) =>
+    fs.existsSync(path.join(process.cwd(), file))
+  );
+  if (!hasNextConfig) {
+    throw new Error('next.config not found');
   }
 });
 
@@ -157,12 +160,6 @@ test('next package installed', () => {
 test('react package installed', () => {
   if (!fs.existsSync(path.join(process.cwd(), 'node_modules/react'))) {
     throw new Error('react not installed');
-  }
-});
-
-test('better-sqlite3 package installed', () => {
-  if (!fs.existsSync(path.join(process.cwd(), 'node_modules/better-sqlite3'))) {
-    throw new Error('better-sqlite3 not installed');
   }
 });
 
