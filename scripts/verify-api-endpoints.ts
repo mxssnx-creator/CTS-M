@@ -98,7 +98,7 @@ async function runTests() {
     }
   } catch (error) {
     console.log('⚠️  API server is not reachable; endpoint verification requires a running app instance.')
-    console.log('    Run `bun scripts/verify-api-routes-offline.ts` for handler-level offline verification.')
+    console.log('    Run `bun run verify:offline` for handler-level offline verification.')
     console.log(`    ${error instanceof Error ? error.message : String(error)}`)
     process.exit(0)
   }

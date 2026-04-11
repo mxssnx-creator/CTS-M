@@ -59,6 +59,43 @@ async function run() {
     }
   })
 
+  await test("main indications stats route", async () => {
+    const { GET } = await import("@/app/api/main/indications-stats/route")
+    const response = await GET()
+    if (response.status !== 200) {
+      throw new Error(`expected 200, got ${response.status}`)
+    }
+    const payload = await response.json()
+    if (!payload || typeof payload.success !== "boolean" || !payload.indications) {
+      throw new Error("missing indications payload")
+    }
+  })
+
+  await test("main strategies evaluation route", async () => {
+    const { GET } = await import("@/app/api/main/strategies-evaluation/route")
+    const response = await GET()
+    if (response.status !== 200) {
+      throw new Error(`expected 200, got ${response.status}`)
+    }
+    const payload = await response.json()
+    if (!payload || typeof payload.success !== "boolean" || !payload.strategies) {
+      throw new Error("missing strategies payload")
+    }
+  })
+
+  await test("trade engine detailed logs route", async () => {
+    const { GET } = await import("@/app/api/trade-engine/detailed-logs/route")
+    const request = new Request("http://offline.test/api/trade-engine/detailed-logs")
+    const response = await GET(request)
+    if (response.status !== 200) {
+      throw new Error(`expected 200, got ${response.status}`)
+    }
+    const payload = await response.json()
+    if (!payload || typeof payload.success !== "boolean" || !Array.isArray(payload.logs)) {
+      throw new Error("missing detailed logs payload")
+    }
+  })
+
   const failed = results.filter((result) => result.status === "FAIL")
   console.log(`\nOffline API verification: ${results.length - failed.length}/${results.length} passed`)
   process.exit(failed.length > 0 ? 1 : 0)
