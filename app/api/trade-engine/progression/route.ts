@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { getAllConnections, getConnectionTrades, getConnectionPositions, initRedis, getRedisClient } from "@/lib/redis-db"
 import { SystemLogger } from "@/lib/system-logger"
 import { ProgressionStateManager } from "@/lib/progression-state-manager"
+import { getConnectionObservability } from "@/lib/connection-observability"
 
 export const dynamic = "force-dynamic"
 
@@ -175,6 +176,7 @@ export async function GET() {
       relevantConnections.map(async (conn) => {
         try {
           const readiness = getConnectionReadiness(conn)
+          const observability = await getConnectionObservability(conn.id)
           
           // Use Redis-based engine status (works across cold starts)
           const redisEngineStatus = await getEngineStatusFromRedis(conn.id)
@@ -234,9 +236,13 @@ export async function GET() {
             }
           }
           
-          const engineState = isEngineRunning ? "running" : readiness.status
+          const engineState = observability.phases.realtime.isStale
+            ? "interrupted"
+            : isEngineRunning
+              ? "running"
+              : readiness.status
           const updatedAt = progressionState.lastUpdate?.toISOString?.() || null
-          const prehistoricLoaded = (progressionState.prehistoricCyclesCompleted || 0) > 0
+          const prehistoricLoaded = observability.prehistoric.loaded || (progressionState.prehistoricCyclesCompleted || 0) > 0
           
           // Merge cycle metrics from Redis and in-memory
           const cycleMetrics = {
@@ -257,6 +263,11 @@ export async function GET() {
             isLiveTrading: conn.is_live_trade,
             isEngineRunning,
             engineState,
+            observability: {
+              counts: observability.counts,
+              logSummary: observability.logSummary,
+              phases: observability.phases,
+            },
             readiness,
             tradeCount,
             pseudoPositionCount: pseudoCount,

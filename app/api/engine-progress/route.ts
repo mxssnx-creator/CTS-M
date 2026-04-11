@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getProgressManager, getAllProgressManagers } from "@/lib/engine-progress-manager"
 import { getConnectionTrackingSnapshot, getSystemTrackingSnapshot } from "@/lib/dashboard-tracking"
+import { getConnectionObservability } from "@/lib/connection-observability"
 
 export async function GET(request: NextRequest) {
   try {
@@ -20,7 +21,7 @@ export async function GET(request: NextRequest) {
         .map(({ connection, snapshot }) => ({
           connectionId: connection.id,
           state: {
-            step: snapshot.progression.prehistoricPhaseActive ? "prehistoric" : "idle",
+            step: snapshot.progression.prehistoricPhaseActive ? "prehistoric" : snapshot.progression.cyclesCompleted > 0 ? "realtime" : "idle",
             progress: snapshot.progression.cyclesCompleted,
             indications: snapshot.counts.indications,
             strategies: snapshot.counts.strategies,
@@ -35,12 +36,15 @@ export async function GET(request: NextRequest) {
     const manager = getProgressManager(connectionId)
     const state = manager.getState()
     const tracking = await getConnectionTrackingSnapshot(connectionId)
+    const observability = await getConnectionObservability(connectionId)
 
     return NextResponse.json({
       progress: {
         ...state,
         tracking: tracking.counts,
         progression: tracking.progression,
+        phases: observability.phases,
+        interrupted: observability.phases.realtime.isStale,
       },
     })
   } catch (error) {

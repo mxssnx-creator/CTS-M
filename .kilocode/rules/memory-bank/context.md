@@ -38,6 +38,7 @@ The template is a clean Next.js 16 starter with TypeScript and Tailwind CSS 4. I
 - [x] System verification scripts now match the actual Bun/Next/Redis setup, build successfully, initialize at layout startup again, and avoid false API failures when no local server is running during offline verification
 - [x] Added offline route-handler verification for key APIs so workflow checks can validate system health, trade-engine status, and progression logic without depending on a reachable localhost server
 - [x] Verification is now organized into Bun script entrypoints (`verify:offline`, `verify:online`, `verify:all`) and offline coverage now includes observability-heavy main stats and detailed log routes
+- [x] Progression and monitoring flows now detect interrupted/stale realtime activity explicitly, expose interruption flags in progression payloads, and validate systemwide flow endpoints offline to catch no-progression faults before UI/runtime failures
 
 ## Current Structure
 
@@ -66,6 +67,8 @@ The template is a clean Next.js 16 starter with TypeScript and Tailwind CSS 4. I
 | `app/layout.tsx` | Root layout now restores startup initialization on render | ✅ Updated |
 | `scripts/verify-api-routes-offline.ts` | Offline route-level verification for key system APIs | ✅ Added |
 | `package.json` | Consolidated Bun verification entrypoints for offline/online/full checks | ✅ Updated |
+| `app/api/connections/progression/[id]/route.ts` | Progression route now flags interrupted/stalled engines and stale realtime flow | ✅ Updated |
+| `app/api/trade-engine/progression/route.ts` | Connection progression overview now includes observability-backed interruption state | ✅ Updated |
 
 ## Current Focus
 
@@ -88,6 +91,7 @@ The template is ready. Trading dashboard and connection log presentation were im
 15. Verification workflow is now reliable again: build uses the local Next binary under Bun, startup checks accept `next.config.ts`, and offline API verification exits cleanly when no sandboxed app URL is reachable
 16. Key workflow verification no longer requires localhost availability because core route handlers can now be executed directly in-process for offline integrity checks
 17. Verification is now organized and solid enough for repeatable operator use: offline route coverage includes status, progression, main statistics, and detailed logs, while online checks remain optional when a live server is available
+18. Interrupted and no-progression conditions are now surfaced explicitly across progression and engine-progress APIs instead of silently presenting stalled engines as healthy idle flows
 
 ## Quick Start Guide
 
@@ -157,3 +161,4 @@ export async function GET() {
 | 2026-04-11 | Fixed verification and startup workflow mismatches by restoring `initializeApplication()` in `app/layout.tsx`, switching build/start scripts to the local Next binary, and updating legacy verification scripts for `next.config.ts`, optional DB drivers, and unreachable local API checks |
 | 2026-04-11 | Added offline API route verification and converted remaining validation/setup guidance to Bun-based commands so workflow checks remain accurate without a reachable sandbox server |
 | 2026-04-11 | Organized verification into explicit Bun entrypoints and expanded offline route validation to observability-heavy APIs (`main` stats and `trade-engine/detailed-logs`), yielding a stable end-to-end hardening workflow |
+| 2026-04-11 | Added explicit interruption/stale-flow detection to progression APIs, stabilized strategy overview response shape, and expanded offline verification to engine-progress, trade-engine progression, monitoring, and strategy overview routes for systemwide no-progression fault detection |

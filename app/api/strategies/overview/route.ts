@@ -11,9 +11,16 @@ export async function GET() {
       { name: "Live Strategy", type: "live", active: stats.live.count > 0, positions: stats.live.count, winRate: stats.live.winRate, profit: stats.live.profitFactor250, drawdown: stats.live.drawdown },
     ]
 
-    return NextResponse.json(strategies)
+    return NextResponse.json({
+      success: true,
+      strategies,
+      summary: {
+        total: strategies.length,
+        active: strategies.filter((strategy) => strategy.active).length,
+      },
+    })
   } catch (error) {
     console.error("[v0] Error fetching strategies:", error)
-    return NextResponse.json([], { status: 500 })
+    return NextResponse.json({ success: false, strategies: [], summary: { total: 0, active: 0 } }, { status: 200 })
   }
 }

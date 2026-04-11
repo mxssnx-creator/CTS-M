@@ -12,6 +12,12 @@ function toNumber(value: unknown): number {
   return Number.isFinite(n) ? n : 0
 }
 
+function toTimestamp(value: unknown): number | null {
+  if (!value) return null
+  const timestamp = new Date(String(value)).getTime()
+  return Number.isFinite(timestamp) ? timestamp : null
+}
+
 /**
  * GET /api/connections/progression/[id]
  * Returns comprehensive progression data for an active connection
@@ -78,9 +84,16 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     // Check for actual running evidence from cycle counts in engine state
     const indicationCycleCount = engineState?.indication_cycle_count || 0
     const strategyCycleCount = engineState?.strategy_cycle_count || 0
-    const hasRecentActivity = engineState?.last_indication_run 
-      ? (Date.now() - new Date(engineState.last_indication_run).getTime()) < 60000 // Active in last 60s
+    const lastIndicationTs = toTimestamp(engineState?.last_indication_run)
+    const lastStrategyTs = toTimestamp(engineState?.last_strategy_run)
+    const lastRealtimeTs = toTimestamp(engineState?.last_realtime_run)
+    const lastObservedActivityTs = [lastIndicationTs, lastStrategyTs, lastRealtimeTs]
+      .filter((value): value is number => value !== null)
+      .sort((a, b) => b - a)[0] ?? null
+    const hasRecentActivity = lastObservedActivityTs !== null
+      ? (Date.now() - lastObservedActivityTs) < 60000
       : false
+    const stalledEngine = engineState?.status === "running" && !hasRecentActivity && !isEngineRunning
     
     // DEBUG: Log what we're reading
     console.log(`[v0] [ProgressionAPI] ${connectionId}: cycleCount=${indicationCycleCount}, stratCount=${strategyCycleCount}, recent=${hasRecentActivity}, engineState.status=${engineState?.status}, running=${isEngineRunning}`)
@@ -143,6 +156,10 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       phase = "prehistoric_data"
       progress = 15
       detail = "Prehistoric data loaded"
+    } else if (stalledEngine) {
+      phase = "interrupted"
+      progress = Math.max(35, Number(progression?.progress) || 35)
+      detail = "Engine marked running but no recent progression activity detected"
     } else if (engineState?.status === "running" || isEngineRunning) {
       // Engine state says running but no cycles yet
       phase = "initializing"
@@ -156,6 +173,10 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       phase = "ready"
       progress = 0
       detail = progression.detail || "Ready - toggle Enable on dashboard to start"
+    } else if (observability.phases.realtime.isStale) {
+      phase = "interrupted"
+      progress = Math.max(25, Number(progression?.progress) || 25)
+      detail = "Realtime processing is stale and awaiting recovery"
     }
     
     // Get recent logs for context
@@ -214,8 +235,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
           strategiesProcessed: currentIdx >= 5 || engineRunning || strategiesCount > 0,
           liveProcessingActive: currentIdx >= 5 || engineRunning,
           liveTradingActive: phase === "live_trading",
+          interrupted: phase === "interrupted",
         },
-        error: phase === "error" ? detail : null,
+        error: phase === "error" || phase === "interrupted" ? detail : null,
       },
       state: {
         cyclesCompleted: observability.progression.cyclesCompleted,
@@ -237,6 +259,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         engineRunning,
         isEngineRunning,
         hasRecentActivity,
+        stalledEngine,
         globalEngineStatus: globalState?.status || "unknown",
         engineStateStatus: engineState?.status || "unknown",
         indicationCycleCount,
@@ -254,6 +277,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         progressionCyclesCompleted: observability.progression.cyclesCompleted,
         lastIndicationRun: engineState?.last_indication_run || null,
         lastStrategyRun: engineState?.last_strategy_run || null,
+        lastRealtimeRun: engineState?.last_realtime_run || null,
       },
       observability: {
         counts: observability.counts,
@@ -293,6 +317,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
           strategiesProcessed: false,
           liveProcessingActive: false,
           liveTradingActive: false,
+          interrupted: true,
         },
         error: error instanceof Error ? error.message : "Unknown error",
       },
