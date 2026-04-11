@@ -10,6 +10,7 @@ import {
   isConnectionWorking,
   isTruthyFlag,
 } from "@/lib/connection-state-utils"
+import { buildIndicationStats, buildStrategyStats, getSystemTrackingSnapshot } from "@/lib/dashboard-tracking"
 
 export const dynamic = "force-dynamic"
 export const revalidate = 0
@@ -117,6 +118,62 @@ export async function GET() {
       baseConnections.length > 0 ? "partial" : "down"
 
     const workflow = await getDashboardWorkflowSnapshot()
+    const tracking = await getSystemTrackingSnapshot()
+    const [strategyStats, indicationStats] = await Promise.all([
+      buildStrategyStats(),
+      buildIndicationStats(),
+    ])
+
+    const overview = {
+      performance: {
+        last250Positions: {
+          total: workflow.connectionMetrics.trades,
+          winning: 0,
+          losing: 0,
+          winRate: 0,
+          profitFactor: 0,
+          totalProfit: workflow.connectionMetrics.totalProfit || 0,
+        },
+        last50Positions: {
+          total: Math.min(workflow.connectionMetrics.trades, 50),
+          winning: 0,
+          losing: 0,
+          winRate: 0,
+          profitFactor: 0,
+          totalProfit: workflow.connectionMetrics.totalProfit || 0,
+        },
+        last32Hours: {
+          totalPositions: workflow.connectionMetrics.positions,
+          totalProfit: workflow.connectionMetrics.totalProfit || 0,
+          profitFactor: 0,
+        },
+      },
+      strategies: ["base", "main", "real", "live"].map((type) => ({
+        type,
+        count: Number((strategyStats as any)?.[type]?.count || 0),
+        winRate: Number((strategyStats as any)?.[type]?.winRate || 0),
+        drawdown: Number((strategyStats as any)?.[type]?.drawdown || 0),
+        drawdownHours: Number((strategyStats as any)?.[type]?.drawdownHours || 0),
+        profitFactor250: Number((strategyStats as any)?.[type]?.profitFactor250 || 0),
+        profitFactor50: Number((strategyStats as any)?.[type]?.profitFactor50 || 0),
+      })),
+      indications: ["direction", "move", "active", "optimal"].map((type) => ({
+        type,
+        totalCount: Number((indicationStats as any)?.[type]?.count || 0),
+        avgSignalStrength: Number((indicationStats as any)?.[type]?.avgSignalStrength || 0),
+        lastTrigger: (indicationStats as any)?.[type]?.lastTrigger || null,
+        profitFactor: Number((indicationStats as any)?.[type]?.profitFactor || 0),
+      })),
+      symbols: tracking.snapshots
+        .flatMap(({ snapshot }) => snapshot.strategies.map((strategy: any) => String(strategy?.symbol || "")).filter(Boolean))
+        .slice(0, 22)
+        .map((symbol) => ({
+          symbol,
+          livePositions: 0,
+          profitFactor250: 0,
+          profitFactor50: 0,
+        })),
+    }
     
     console.log(`[v0] [SystemStats] Response: exchangeConnections.total=${insertedBaseConnections.length}, debug: base=${baseConnections.length}, enabled=${enabledBase.length}, inserted=${insertedBaseConnections.length}`)
     
@@ -173,6 +230,7 @@ export async function GET() {
       totalTrades: workflow.connectionMetrics.trades,
       workflowOverview: workflow.overview,
       workflowPhases: workflow.workflowPhases,
+      overview,
       // DEBUG: Help understand what's being counted
       _debug: {
         baseConnectionsTotal: baseConnections.length,

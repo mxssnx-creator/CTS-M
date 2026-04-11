@@ -7,6 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts"
 import { AlertCircle, TrendingUp, Activity, Zap } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { normalizeProgressionStatus } from "@/lib/progression-status"
 
 interface ExchangeStatisticsProps {
   connectionId: string
@@ -65,6 +66,7 @@ const ExchangeStatisticsComponent = ({ connectionId, connectionName }: ExchangeS
   }
 
   const { prehistoric, symbols, metrics, progression } = stats
+  const normalizedProgression = normalizeProgressionStatus(progression?.phase)
 
   return (
     <div className="space-y-4">
@@ -217,7 +219,7 @@ const ExchangeStatisticsComponent = ({ connectionId, connectionName }: ExchangeS
             <div className="space-y-2">
               <div className="flex justify-between items-center">
                 <span className="text-sm font-medium">Phase</span>
-                <Badge>{progression.phase || "idle"}</Badge>
+                <Badge variant={normalizedProgression.tone === "destructive" ? "destructive" : "outline"}>{normalizedProgression.label}</Badge>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-sm font-medium">Progress</span>

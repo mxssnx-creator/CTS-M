@@ -31,6 +31,15 @@ interface SymbolStats {
   profitFactor50: number
 }
 
+interface UnifiedOverviewData {
+  overview?: {
+    performance?: PerformanceMetrics
+    strategies?: StrategyMetrics[]
+    indications?: IndicationMetrics[]
+    symbols?: SymbolStats[]
+  }
+}
+
 interface PerformanceMetrics {
   last250Positions: {
     total: number
@@ -117,114 +126,30 @@ export function StatisticsOverviewV2({ connections }: StatisticsOverviewV2Props)
       setLoading(prev => !hasData ? true : prev)
       setError(null)
 
-      const results = await Promise.allSettled([
-        fetchWithTimeout("/api/trading/stats"),
-        fetchWithTimeout("/api/main/strategies-evaluation"),
-        fetchWithTimeout("/api/main/indications-stats"),
-        fetchWithTimeout("/api/exchange-positions/symbols-stats"),
-      ])
+      const unifiedResponse = await fetchWithTimeout("/api/main/system-stats-v3")
+
+      if (!unifiedResponse.ok) {
+        throw new Error(`Failed unified statistics request: ${unifiedResponse.status}`)
+      }
+
+      const unifiedData = await unifiedResponse.json() as UnifiedOverviewData
 
       let dataReceived = false
 
-      if (results[0].status === "fulfilled" && results[0].value.ok) {
-        try {
-          const perfData = await results[0].value.json()
-          if (perfData?.last250 || perfData?.last50 || perfData?.last32h) {
-            dataReceived = true
-          }
-          setPerformance({
-            last250Positions: {
-              total: toNumber(perfData?.last250?.total, 0),
-              winning: toNumber(perfData?.last250?.wins, 0),
-              losing: toNumber(perfData?.last250?.losses, 0),
-              winRate: toNumber(perfData?.last250?.winRate, 0),
-              profitFactor: toNumber(perfData?.last250?.profitFactor, 0),
-              totalProfit: toNumber(perfData?.last250?.totalProfit, 0),
-            },
-            last50Positions: {
-              total: toNumber(perfData?.last50?.total, 0),
-              winning: toNumber(perfData?.last50?.wins, 0),
-              losing: toNumber(perfData?.last50?.losses, 0),
-              winRate: toNumber(perfData?.last50?.winRate, 0),
-              profitFactor: toNumber(perfData?.last50?.profitFactor, 0),
-              totalProfit: toNumber(perfData?.last50?.totalProfit, 0),
-            },
-            last32Hours: {
-              totalPositions: toNumber(perfData?.last32h?.total, 0),
-              totalProfit: toNumber(perfData?.last32h?.totalProfit, 0),
-              profitFactor: toNumber(perfData?.last32h?.profitFactor, 0),
-            },
-          })
-        } catch (e) {
-          console.warn("[Statistics] Failed to parse performance data:", e)
-        }
-      } else {
-        console.warn("[Statistics] Performance data fetch failed:", results[0])
+      const overview = unifiedData?.overview || {}
+      const performanceData = overview.performance || DEFAULT_PERFORMANCE
+      const strategiesData = overview.strategies || DEFAULT_STRATEGIES
+      const indicationsData = overview.indications || DEFAULT_INDICATIONS
+      const symbolsData = overview.symbols || []
+
+      if (performanceData.last250Positions.total > 0 || strategiesData.some((item) => item.count > 0) || indicationsData.some((item) => item.totalCount > 0) || symbolsData.length > 0) {
+        dataReceived = true
       }
 
-      if (results[1].status === "fulfilled" && results[1].value.ok) {
-        try {
-          const stratData = await results[1].value.json()
-          if (stratData?.strategies) {
-            dataReceived = true
-          }
-          const strategiesData: StrategyMetrics[] = ["base", "main", "real", "live"].map((type) => ({
-            type: type as StrategyMetrics["type"],
-            count: toNumber(stratData?.strategies?.[type]?.count, 0),
-            winRate: toNumber(stratData?.strategies?.[type]?.winRate, 0),
-            drawdown: toNumber(stratData?.strategies?.[type]?.drawdown, 0),
-            drawdownHours: toNumber(stratData?.strategies?.[type]?.drawdownHours, 0),
-            profitFactor250: toNumber(stratData?.strategies?.[type]?.profitFactor250, 0),
-            profitFactor50: toNumber(stratData?.strategies?.[type]?.profitFactor50, 0),
-          }))
-          setStrategies(strategiesData)
-        } catch (e) {
-          console.warn("[Statistics] Failed to parse strategies data:", e)
-        }
-      } else {
-        console.warn("[Statistics] Strategies data fetch failed:", results[1])
-      }
-
-      if (results[2].status === "fulfilled" && results[2].value.ok) {
-        try {
-          const indicData = await results[2].value.json()
-          if (indicData?.indications) {
-            dataReceived = true
-          }
-          const indicationsData: IndicationMetrics[] = ["direction", "move", "active", "optimal"].map((type) => ({
-            type: type as IndicationMetrics["type"],
-            totalCount: toNumber(indicData?.indications?.[type]?.count, 0),
-            avgSignalStrength: toNumber(indicData?.indications?.[type]?.avgSignalStrength, 0),
-            lastTrigger: indicData?.indications?.[type]?.lastTrigger ? new Date(indicData.indications[type].lastTrigger) : null,
-            profitFactor: toNumber(indicData?.indications?.[type]?.profitFactor, 0),
-          }))
-          setIndications(indicationsData)
-        } catch (e) {
-          console.warn("[Statistics] Failed to parse indications data:", e)
-        }
-      } else {
-        console.warn("[Statistics] Indications data fetch failed:", results[2])
-      }
-
-      if (results[3].status === "fulfilled" && results[3].value.ok) {
-        try {
-          const symbolData = await results[3].value.json()
-          if (symbolData?.symbols?.length > 0) {
-            dataReceived = true
-          }
-          const normalizedSymbols: SymbolStats[] = (symbolData?.symbols || []).slice(0, 22).map((s: any) => ({
-            symbol: String(s?.symbol || "UNKNOWN"),
-            livePositions: toNumber(s?.livePositions ?? s?.openPositions, 0),
-            profitFactor250: toNumber(s?.profitFactor250, 0),
-            profitFactor50: toNumber(s?.profitFactor50, 0),
-          }))
-          setSymbols(normalizedSymbols)
-        } catch (e) {
-          console.warn("[Statistics] Failed to parse symbols data:", e)
-        }
-      } else {
-        console.warn("[Statistics] Symbols data fetch failed:", results[3])
-      }
+      setPerformance(performanceData)
+      setStrategies(strategiesData)
+      setIndications(indicationsData)
+      setSymbols(symbolsData.slice(0, 22))
 
       setHasData(dataReceived)
       setLastUpdated(new Date())

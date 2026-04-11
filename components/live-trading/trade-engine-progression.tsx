@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Activity, TrendingUp, Clock, Zap } from "lucide-react"
 import { useEffect, useState } from "react"
+import { normalizeProgressionStatus } from "@/lib/progression-status"
 
 interface ProgressionData {
   connectionId: string
@@ -63,21 +64,18 @@ export function TradeEngineProgression() {
   }, [])
 
   const getStateColor = (state: string) => {
-    switch (state) {
-      case "running":
+    const normalized = normalizeProgressionStatus(state)
+    switch (normalized.tone) {
+      case "success":
         return "bg-green-100 text-green-800"
-      case "initializing":
-        return "bg-blue-100 text-blue-800"
-      case "stopped":
-        return "bg-gray-100 text-gray-800"
-      case "recovering":
+      case "warning":
         return "bg-amber-100 text-amber-800"
-      case "interrupted":
+      case "destructive":
         return "bg-red-100 text-red-800"
-      case "error":
-        return "bg-red-100 text-red-800"
+      case "secondary":
+        return "bg-gray-100 text-gray-800"
       default:
-        return "bg-yellow-100 text-yellow-800"
+        return "bg-blue-100 text-blue-800"
     }
   }
 
