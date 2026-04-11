@@ -32,6 +32,10 @@ interface SymbolStats {
 }
 
 interface UnifiedOverviewData {
+  validation?: {
+    valid: boolean
+    issues: string[]
+  }
   overview?: {
     performance?: PerformanceMetrics
     strategies?: StrategyMetrics[]
@@ -98,6 +102,7 @@ export function StatisticsOverviewV2({ connections }: StatisticsOverviewV2Props)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [retryCount, setRetryCount] = useState(0)
   const [hasData, setHasData] = useState(false)
+  const [validation, setValidation] = useState<{ valid: boolean; issues: string[] } | null>(null)
 
   const toNumber = useCallback((value: unknown, fallback = 0): number => {
     if (typeof value === "number" && Number.isFinite(value)) return value
@@ -133,6 +138,18 @@ export function StatisticsOverviewV2({ connections }: StatisticsOverviewV2Props)
       }
 
       const unifiedData = await unifiedResponse.json() as UnifiedOverviewData
+      setValidation(unifiedData.validation || null)
+
+      if (unifiedData.validation && !unifiedData.validation.valid) {
+        setPerformance(DEFAULT_PERFORMANCE)
+        setStrategies(DEFAULT_STRATEGIES)
+        setIndications(DEFAULT_INDICATIONS)
+        setSymbols([])
+        setHasData(false)
+        setError(`Validated data issue: ${unifiedData.validation.issues.join(", ")}`)
+        setLoading(false)
+        return
+      }
 
       let dataReceived = false
 
@@ -184,7 +201,10 @@ export function StatisticsOverviewV2({ connections }: StatisticsOverviewV2Props)
     <Card className="col-span-full bg-gradient-to-br from-card to-card/50 border-primary/20">
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
-          <CardTitle className="text-lg">Trading Statistics Overview</CardTitle>
+          <div className="flex items-center gap-2">
+            <CardTitle className="text-lg">Trading Statistics Overview</CardTitle>
+            {validation && <Badge variant={validation.valid ? "outline" : "destructive"}>{validation.valid ? "validated" : "invalid"}</Badge>}
+          </div>
           <div className="flex items-center gap-2">
             {lastUpdated && (
               <span className="text-xs text-muted-foreground">
@@ -208,6 +228,12 @@ export function StatisticsOverviewV2({ connections }: StatisticsOverviewV2Props)
           <div className="flex items-center gap-2 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
             <AlertCircle className="h-4 w-4 text-yellow-500 flex-shrink-0" />
             <p className="text-sm text-yellow-600 dark:text-yellow-400">{error}</p>
+          </div>
+        )}
+
+        {validation && !validation.valid && validation.issues.length > 0 && (
+          <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-800">
+            {validation.issues.join("; ")}
           </div>
         )}
 

@@ -12,6 +12,10 @@ interface ProcessingProgressPanelProps {
 }
 
 interface UnifiedProcessingOverview {
+  validation?: {
+    valid: boolean
+    issues: string[]
+  }
   overview?: {
     processing?: {
       connectionId?: string
@@ -49,6 +53,7 @@ export function ProcessingProgressPanel({ connectionId }: ProcessingProgressPane
   const [metrics, setMetrics] = useState<ProcessingMetrics | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [validation, setValidation] = useState<{ valid: boolean; issues: string[] } | null>(null)
 
   useEffect(() => {
     if (!connectionId || connectionId === 'demo-mode') {
@@ -63,6 +68,12 @@ export function ProcessingProgressPanel({ connectionId }: ProcessingProgressPane
           throw new Error('Failed to fetch processing overview')
         }
         const data = await response.json() as UnifiedProcessingOverview
+        setValidation(data.validation || null)
+        if (data.validation && !data.validation.valid) {
+          setMetrics(null)
+          setError(`Validated data issue: ${data.validation.issues.join(", ")}`)
+          return
+        }
         const processing = data.overview?.processing
         if (processing && processing.connectionId === connectionId) {
           const normalized = normalizeProgressionStatus(processing.progression?.phase)
@@ -157,9 +168,13 @@ export function ProcessingProgressPanel({ connectionId }: ProcessingProgressPane
           <CardTitle className="text-sm font-medium text-slate-300 flex items-center gap-2">
             <Activity className="w-4 h-4" />
             Processing Progress
+            {validation && <Badge variant={validation.valid ? "outline" : "destructive"} className="ml-2">{validation.valid ? 'validated' : 'invalid'}</Badge>}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
+          {validation && !validation.valid && validation.issues.length > 0 && (
+            <div className="text-[11px] text-red-300">{validation.issues.join('; ')}</div>
+          )}
           <div className="text-xs text-slate-400">
             {error ? `Error: ${error}` : 'No processing data yet. Start the engine and enable a connection to see progress.'}
           </div>
@@ -189,6 +204,7 @@ export function ProcessingProgressPanel({ connectionId }: ProcessingProgressPane
         <CardTitle className="text-sm font-medium text-slate-300 flex items-center gap-2">
           <Activity className="w-4 h-4" />
           Processing Progress
+          {validation && <Badge variant={validation.valid ? "outline" : "destructive"} className="ml-2">{validation.valid ? 'validated' : 'invalid'}</Badge>}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3 text-xs">

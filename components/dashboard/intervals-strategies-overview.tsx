@@ -37,6 +37,7 @@ export function IntervalsStrategiesOverview({ connections }: { connections: any[
   const [intervals, setIntervals] = useState<IntervalsData>({})
   const [strategies, setStrategies] = useState<StrategyStats[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [validation, setValidation] = useState<{ valid: boolean; issues: string[] } | null>(null)
 
   useEffect(() => {
     loadData()
@@ -80,6 +81,11 @@ export function IntervalsStrategiesOverview({ connections }: { connections: any[
         const statsRes = await fetch("/api/main/system-stats-v3").catch(() => null)
         if (statsRes?.ok) {
           const statsData = await statsRes.json()
+          setValidation(statsData?.validation || null)
+          if (statsData?.validation && !statsData.validation.valid) {
+            setStrategies([])
+            return
+          }
           const normalized = normalizeProgressionStatus(statsData?.overview?.processing?.progression?.phase)
           const fallbackStrategies: StrategyStats[] = [
             { type: "base", enabled: true, rangeCount: 0, activePositions: statsData.activeConnections?.total || 0, totalIndications: statsData?.overview?.processing?.indications?.direction || 0, successRate: normalized.isInterrupted ? 0 : 100 },
@@ -159,6 +165,7 @@ export function IntervalsStrategiesOverview({ connections }: { connections: any[
             <div className="flex items-center gap-2">
               <Clock className="h-5 w-5 text-blue-500" />
               <CardTitle>Intervals Health</CardTitle>
+              {validation && <Badge variant={validation.valid ? "outline" : "destructive"}>{validation.valid ? 'validated' : 'invalid'}</Badge>}
             </div>
             <Button variant="outline" size="sm" onClick={loadData}>
               <RefreshCw className="h-4 w-4 mr-2" />
@@ -166,6 +173,9 @@ export function IntervalsStrategiesOverview({ connections }: { connections: any[
             </Button>
           </div>
           <CardDescription>Real-time interval progression status for all indication types</CardDescription>
+          {validation && !validation.valid && validation.issues.length > 0 && (
+            <div className="text-xs text-red-600">{validation.issues.join('; ')}</div>
+          )}
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
