@@ -4,6 +4,7 @@ import { getProgressionLogs, forceFlushLogs } from "@/lib/engine-progression-log
 import { ProgressionStateManager } from "@/lib/progression-state-manager"
 import { getGlobalTradeEngineCoordinator } from "@/lib/trade-engine"
 import { getConnectionObservability } from "@/lib/connection-observability"
+import { assessAndRecoverConnectionFlow } from "@/lib/engine-resilience"
 
 export const dynamic = "force-dynamic"
 
@@ -76,6 +77,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     // Get progression state (cycles, success rates)
     const progressionState = await ProgressionStateManager.getProgressionState(connectionId)
     const observability = await getConnectionObservability(connectionId)
+    const resilience = await assessAndRecoverConnectionFlow(connectionId)
     
     // Count indications processed for this connection
     const indicationsCount = observability.counts.indications
@@ -93,7 +95,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const hasRecentActivity = lastObservedActivityTs !== null
       ? (Date.now() - lastObservedActivityTs) < 60000
       : false
-    const stalledEngine = engineState?.status === "running" && !hasRecentActivity && !isEngineRunning
+    const stalledEngine = (engineState?.status === "running" && !hasRecentActivity && !isEngineRunning) || resilience.stale
     
     // DEBUG: Log what we're reading
     console.log(`[v0] [ProgressionAPI] ${connectionId}: cycleCount=${indicationCycleCount}, stratCount=${strategyCycleCount}, recent=${hasRecentActivity}, engineState.status=${engineState?.status}, running=${isEngineRunning}`)
@@ -278,6 +280,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         lastIndicationRun: engineState?.last_indication_run || null,
         lastStrategyRun: engineState?.last_strategy_run || null,
         lastRealtimeRun: engineState?.last_realtime_run || null,
+        recovery: resilience,
       },
       observability: {
         counts: observability.counts,

@@ -44,6 +44,9 @@ async function run() {
     if (!Array.isArray(payload?.connections)) {
       throw new Error("missing connections array")
     }
+    if (payload.connections.some((connection: any) => connection.status === "running" && connection.recovery?.stale)) {
+      throw new Error("running connection reported stale recovery state")
+    }
   })
 
   await test("progression route", async () => {

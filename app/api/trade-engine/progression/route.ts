@@ -3,6 +3,7 @@ import { getAllConnections, getConnectionTrades, getConnectionPositions, initRed
 import { SystemLogger } from "@/lib/system-logger"
 import { ProgressionStateManager } from "@/lib/progression-state-manager"
 import { getConnectionObservability } from "@/lib/connection-observability"
+import { assessAndRecoverConnectionFlow } from "@/lib/engine-resilience"
 
 export const dynamic = "force-dynamic"
 
@@ -177,6 +178,7 @@ export async function GET() {
         try {
           const readiness = getConnectionReadiness(conn)
           const observability = await getConnectionObservability(conn.id)
+          const resilience = await assessAndRecoverConnectionFlow(conn.id)
           
           // Use Redis-based engine status (works across cold starts)
           const redisEngineStatus = await getEngineStatusFromRedis(conn.id)
@@ -267,6 +269,7 @@ export async function GET() {
               counts: observability.counts,
               logSummary: observability.logSummary,
               phases: observability.phases,
+              recovery: resilience,
             },
             readiness,
             tradeCount,

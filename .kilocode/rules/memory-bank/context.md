@@ -39,6 +39,7 @@ The template is a clean Next.js 16 starter with TypeScript and Tailwind CSS 4. I
 - [x] Added offline route-handler verification for key APIs so workflow checks can validate system health, trade-engine status, and progression logic without depending on a reachable localhost server
 - [x] Verification is now organized into Bun script entrypoints (`verify:offline`, `verify:online`, `verify:all`) and offline coverage now includes observability-heavy main stats and detailed log routes
 - [x] Progression and monitoring flows now detect interrupted/stale realtime activity explicitly, expose interruption flags in progression payloads, and validate systemwide flow endpoints offline to catch no-progression faults before UI/runtime failures
+- [x] Added shared engine resilience logic to assess stale activity and auto-trigger recovery for eligible running connections, reducing interruptions before they surface as user-visible stalled progression states
 
 ## Current Structure
 
@@ -69,6 +70,8 @@ The template is a clean Next.js 16 starter with TypeScript and Tailwind CSS 4. I
 | `package.json` | Consolidated Bun verification entrypoints for offline/online/full checks | ✅ Updated |
 | `app/api/connections/progression/[id]/route.ts` | Progression route now flags interrupted/stalled engines and stale realtime flow | ✅ Updated |
 | `app/api/trade-engine/progression/route.ts` | Connection progression overview now includes observability-backed interruption state | ✅ Updated |
+| `lib/engine-resilience.ts` | Shared stale-flow assessment and automatic engine recovery orchestration | ✅ Added |
+| `app/api/trade-engine/status/route.ts` | Status route now exposes recovery state and performs prevention-aware flow assessment | ✅ Updated |
 
 ## Current Focus
 
@@ -92,6 +95,7 @@ The template is ready. Trading dashboard and connection log presentation were im
 16. Key workflow verification no longer requires localhost availability because core route handlers can now be executed directly in-process for offline integrity checks
 17. Verification is now organized and solid enough for repeatable operator use: offline route coverage includes status, progression, main statistics, and detailed logs, while online checks remain optional when a live server is available
 18. Interrupted and no-progression conditions are now surfaced explicitly across progression and engine-progress APIs instead of silently presenting stalled engines as healthy idle flows
+19. Eligible stalled engines now enter an automatic recovery path with cooldown protection, so interruption prevention is built into status/progression reads rather than relying only on manual restart flows
 
 ## Quick Start Guide
 
@@ -162,3 +166,4 @@ export async function GET() {
 | 2026-04-11 | Added offline API route verification and converted remaining validation/setup guidance to Bun-based commands so workflow checks remain accurate without a reachable sandbox server |
 | 2026-04-11 | Organized verification into explicit Bun entrypoints and expanded offline route validation to observability-heavy APIs (`main` stats and `trade-engine/detailed-logs`), yielding a stable end-to-end hardening workflow |
 | 2026-04-11 | Added explicit interruption/stale-flow detection to progression APIs, stabilized strategy overview response shape, and expanded offline verification to engine-progress, trade-engine progression, monitoring, and strategy overview routes for systemwide no-progression fault detection |
+| 2026-04-11 | Added shared engine resilience recovery logic that detects stale realtime activity, attempts automatic restart for eligible connections with cooldown protection, and exposes recovery state through status and progression APIs to minimize visible interruptions |

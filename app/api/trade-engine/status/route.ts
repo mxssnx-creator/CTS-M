@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { getRedisClient, initRedis, getActiveConnectionsForEngine } from "@/lib/redis-db"
 import { getGlobalTradeEngineCoordinator } from "@/lib/trade-engine"
 import { getConnectionObservability } from "@/lib/connection-observability"
+import { assessAndRecoverConnectionFlow } from "@/lib/engine-resilience"
 
 export const dynamic = "force-dynamic"
 export const revalidate = 0
@@ -87,6 +88,7 @@ export async function GET() {
       connections.map(async (conn: any) => {
         try {
           const observability = await getConnectionObservability(conn.id)
+          const resilience = await assessAndRecoverConnectionFlow(conn.id)
           const progressionState = observability.progression.raw
           const positionsCount = observability.counts.positions
           const tradesCount = observability.counts.trades
@@ -149,6 +151,7 @@ export async function GET() {
               logs: observability.logSummary,
               prehistoric: observability.prehistoric,
               phases: observability.phases,
+              recovery: resilience,
             },
             progression: {
               cycles_completed: observability.progression.cyclesCompleted,
@@ -163,6 +166,7 @@ export async function GET() {
             },
             state: progressionState,
             connection: observability,
+            recovery: resilience,
           }
         } catch (error) {
           console.error(`[v0] [Status] Error processing connection ${conn.id}:`, error)
