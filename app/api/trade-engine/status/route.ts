@@ -148,6 +148,7 @@ export async function GET() {
               realtimeCycles: observability.engine.realtimeCycles,
               logs: observability.logSummary,
               prehistoric: observability.prehistoric,
+              phases: observability.phases,
             },
             progression: {
               cycles_completed: observability.progression.cyclesCompleted,

@@ -450,6 +450,7 @@ export async function GET(request: Request) {
         indications: item.observability.indications,
         strategies: item.observability.strategies,
         prehistoric: item.observability.prehistoric,
+        phases: item.observability.phases,
       })),
     }
 

@@ -262,6 +262,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         strategies: observability.strategies,
         prehistoric: observability.prehistoric,
         logSummary: observability.logSummary,
+        phases: observability.phases,
       },
       recentLogs: recentLogs.slice(0, 20).map(log => ({
         timestamp: log.timestamp,

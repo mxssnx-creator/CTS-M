@@ -53,6 +53,25 @@ interface ObservabilitySummary {
     warning?: number
     error?: number
   }
+  phases?: {
+    historic?: {
+      isLoaded?: boolean
+      isProcessing?: boolean
+      symbolsProcessed?: number
+      symbolsTotal?: number
+      logs?: number
+      lastUpdatedAt?: string | null
+    }
+    realtime?: {
+      isActive?: boolean
+      isStale?: boolean
+      activeSymbols?: number
+      positions?: number
+      trades?: number
+      logs?: number
+      lastUpdatedAt?: string | null
+    }
+  }
 }
 
 interface ProgressionLogsDialogProps {
@@ -193,6 +212,29 @@ export function ProgressionLogsDialog({
             <div className="text-center">
               <div className="text-lg font-semibold">{observability.logSummary?.total || logs.length}</div>
               <div className="text-xs text-muted-foreground">Related Logs</div>
+            </div>
+          </div>
+        )}
+
+        {observability?.phases && (
+          <div className="mx-6 mb-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div className="rounded-lg border bg-muted/30 p-3 text-xs">
+              <div className="mb-2 font-semibold">Historic Processing</div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>Status: {observability.phases.historic?.isLoaded ? "Loaded" : observability.phases.historic?.isProcessing ? "Processing" : "Pending"}</div>
+                <div>Logs: {observability.phases.historic?.logs || 0}</div>
+                <div>Symbols: {observability.phases.historic?.symbolsProcessed || 0}/{observability.phases.historic?.symbolsTotal || 0}</div>
+                <div>Updated: {observability.phases.historic?.lastUpdatedAt ? new Date(observability.phases.historic.lastUpdatedAt).toLocaleTimeString() : "-"}</div>
+              </div>
+            </div>
+            <div className="rounded-lg border bg-muted/30 p-3 text-xs">
+              <div className="mb-2 font-semibold">Realtime Processing</div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>Status: {observability.phases.realtime?.isActive ? observability.phases.realtime?.isStale ? "Stale" : "Active" : "Idle"}</div>
+                <div>Logs: {observability.phases.realtime?.logs || 0}</div>
+                <div>Symbols: {observability.phases.realtime?.activeSymbols || 0}</div>
+                <div>Positions/Trades: {(observability.phases.realtime?.positions || 0)}/{(observability.phases.realtime?.trades || 0)}</div>
+              </div>
             </div>
           </div>
         )}

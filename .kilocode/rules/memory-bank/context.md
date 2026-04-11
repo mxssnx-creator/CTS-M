@@ -34,6 +34,7 @@ The template is a clean Next.js 16 starter with TypeScript and Tailwind CSS 4. I
 - [x] Trade engine status, connection info dialogs, and related monitoring views now derive connection-scoped live metrics from shared insights instead of disconnected per-view placeholders
 - [x] Added a shared connection observability layer so engine tracking, prehistoric progress, logs, indications, and strategy counts resolve from one relation and stay consistent across main status APIs and info dialogs
 - [x] Connection progression endpoints and dashboard progression/log dialogs now consume the shared observability relation, exposing consistent log counts, symbol coverage, prehistoric state, and indication/strategy totals inside active-connection cards
+- [x] Observability now recognizes historic vs realtime processing separately from database-backed engine state, timestamps, and structured logs so UIs can show smarter phase-specific tracking and statistics
 
 ## Current Structure
 
@@ -56,6 +57,7 @@ The template is a clean Next.js 16 starter with TypeScript and Tailwind CSS 4. I
 | `lib/connection-insights.ts` | Shared connection-scoped engine/log/tracking metrics for status and dialogs | ✅ Added |
 | `lib/connection-observability.ts` | Unified relation model for engine tracking, logs, prehistoric info, indications, and strategies | ✅ Added |
 | `app/api/connections/progression/[id]/route.ts` | Progression API enriched with observability-backed metrics for dashboard cards | ✅ Updated |
+| `app/api/trade-engine/status/route.ts` | Status API now exposes phase-aware historic/realtime observability | ✅ Updated |
 
 ## Current Focus
 
@@ -74,6 +76,7 @@ The template is ready. Trading dashboard and connection log presentation were im
 11. Monitoring/status cards and connection info views now consume a shared real-data connection insight layer to keep UI state and backend tracking aligned after quickstart activation
 12. Main-page and dialog consumers now share one observability relation to prevent engine/log/info drift between status cards, detailed logging, and connection information panels
 13. Active connection cards and progression dialogs now expose the same observability-backed counts and prehistoric coverage used by the status/logging APIs
+14. Historic and realtime processing are now detected independently using persisted engine-state fields, structured logs, and last-run timestamps so statistics retrieval is more conformant to actual processing stage
 
 ## Quick Start Guide
 
@@ -139,3 +142,4 @@ export async function GET() {
 | 2026-04-10 | Added shared connection insights for status/dialog UIs, updated trade engine status responses to include real per-connection health/metrics, and verified BingX startup flow plus lint/typecheck |
 | 2026-04-11 | Added shared connection observability composition, updated trade-engine status/detail routes to expose consistent per-connection tracking/log/info data, and expanded the connection info dialog with unified engine relation metrics |
 | 2026-04-11 | Extended shared observability into progression APIs and active-connection dialogs so dashboard cards, progression logs, and info panels all report the same connection-scoped engine/log/prehistoric/indication/strategy data |
+| 2026-04-11 | Made observability phase-aware for historic vs realtime processing, deriving smarter UI metrics from persisted engine state, structured logs, and last-run timestamps across status, progression, and connection dialogs |

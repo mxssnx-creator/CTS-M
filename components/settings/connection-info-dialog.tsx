@@ -177,6 +177,20 @@ export function ConnectionInfoDialog({ open, onOpenChange, connectionId, connect
                       <div className="text-muted-foreground">Trades: {info.observability.progression?.totalTrades || 0}</div>
                     </div>
                   </div>
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2 text-xs">
+                    <div className="rounded border p-3">
+                      <div className="font-medium mb-2">Historic Processing</div>
+                      <div>Status: {info.observability.phases?.historic?.isLoaded ? "Loaded" : info.observability.phases?.historic?.isProcessing ? "Processing" : "Pending"}</div>
+                      <div className="text-muted-foreground">Symbols: {info.observability.phases?.historic?.symbolsProcessed || 0}/{info.observability.phases?.historic?.symbolsTotal || 0}</div>
+                      <div className="text-muted-foreground">Logs: {info.observability.phases?.historic?.logs || 0}</div>
+                    </div>
+                    <div className="rounded border p-3">
+                      <div className="font-medium mb-2">Realtime Processing</div>
+                      <div>Status: {info.observability.phases?.realtime?.isActive ? info.observability.phases?.realtime?.isStale ? "Stale" : "Active" : "Idle"}</div>
+                      <div className="text-muted-foreground">Symbols: {info.observability.phases?.realtime?.activeSymbols || 0}</div>
+                      <div className="text-muted-foreground">Logs: {info.observability.phases?.realtime?.logs || 0}</div>
+                    </div>
+                  </div>
                 </div>
               </>
             )}

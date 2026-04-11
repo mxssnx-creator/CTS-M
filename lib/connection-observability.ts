@@ -1,5 +1,7 @@
 import { getConnectionInsights } from "@/lib/connection-insights"
 
+const REALTIME_WINDOW_MS = 90_000
+
 function toNumber(value: unknown): number {
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : 0
@@ -12,9 +14,21 @@ function toPercent(value: unknown): number {
   return numeric
 }
 
+function toTimestamp(value: unknown): number | null {
+  if (!value) return null
+  const timestamp = new Date(String(value)).getTime()
+  return Number.isFinite(timestamp) ? timestamp : null
+}
+
+function countLogsByMatch(logs: any[], matcher: (log: any) => boolean) {
+  return logs.reduce((sum, log) => sum + (matcher(log) ? 1 : 0), 0)
+}
+
 export async function getConnectionObservability(connectionId: string) {
   const insights = await getConnectionInsights(connectionId)
   const progression = insights.tracking.progression
+  const engineState = (insights.engineState as any) || {}
+  const now = Date.now()
 
   const indications = {
     direction: Math.max(insights.indicationsByType.direction, toNumber(progression.indicationsDirectionCount)),
@@ -42,17 +56,86 @@ export async function getConnectionObservability(connectionId: string) {
     latest: insights.structuredLogs[0] ?? null,
   }
 
+  const historicLogCount = countLogsByMatch(
+    insights.structuredLogs,
+    (log) => /prehistoric|histor/i.test(String(log?.phase || log?.engine || log?.action || "")),
+  )
+
+  const realtimeLogCount = countLogsByMatch(
+    insights.structuredLogs,
+    (log) => /realtime|live|position/i.test(String(log?.phase || log?.engine || log?.action || "")),
+  )
+
+  const lastHistoricUpdate =
+    engineState.prehistoric_last_processed_at ||
+    engineState.prehistoric_data_end ||
+    engineState.updated_at ||
+    null
+
+  const lastRealtimeUpdate =
+    engineState.last_realtime_run ||
+    engineState.last_indication_run ||
+    engineState.last_strategy_run ||
+    null
+
+  const lastRealtimeTimestamp = toTimestamp(lastRealtimeUpdate)
+  const lastHistoricTimestamp = toTimestamp(lastHistoricUpdate)
+
+  const historicPhase = {
+    isLoaded: insights.engine.prehistoricLoaded,
+    isProcessing:
+      !insights.engine.prehistoricLoaded &&
+      (toNumber(engineState.config_set_symbols_processed) > 0 || historicLogCount > 0),
+    hasErrors: toNumber(engineState.config_set_errors) > 0,
+    symbolsTotal: Math.max(toNumber(engineState.config_set_symbols_total), toNumber(engineState.prehistoric_symbols?.length)),
+    symbolsProcessed: Math.max(toNumber(engineState.config_set_symbols_processed), toNumber(engineState.prehistoric_symbols?.length)),
+    symbolsWithoutData: toNumber(engineState.config_set_symbols_without_data),
+    candlesProcessed: toNumber(engineState.config_set_candles_processed),
+    indicationResults: toNumber(engineState.config_set_indication_results),
+    strategyPositions: toNumber(engineState.config_set_strategy_positions),
+    durationMs: toNumber(engineState.config_set_duration_ms),
+    logs: historicLogCount,
+    lastUpdatedAt: lastHistoricUpdate,
+  }
+
+  const realtimePhase = {
+    isActive:
+      insights.engine.status === "running" ||
+      (lastRealtimeTimestamp !== null && now - lastRealtimeTimestamp <= REALTIME_WINDOW_MS) ||
+      insights.engine.realtimeCycles > 0 ||
+      insights.counts.positions > 0,
+    isStale:
+      lastRealtimeTimestamp !== null && now - lastRealtimeTimestamp > REALTIME_WINDOW_MS,
+    cycles: {
+      indications: insights.engine.indicationCycles,
+      strategies: insights.engine.strategyCycles,
+      realtime: insights.engine.realtimeCycles,
+      total: insights.engine.indicationCycles + insights.engine.strategyCycles + insights.engine.realtimeCycles,
+    },
+    avgDurationMs: {
+      indications: insights.engine.indicationAvgDuration,
+      strategies: insights.engine.strategyAvgDuration,
+      realtime: insights.engine.realtimeAvgDuration,
+      last: insights.engine.lastCycleDuration,
+    },
+    activeSymbols: insights.activeSymbols.length,
+    positions: insights.counts.positions,
+    trades: insights.counts.trades,
+    logs: realtimeLogCount,
+    lastUpdatedAt: lastRealtimeUpdate,
+  }
+
   const prehistoric = {
-    loaded: insights.engine.prehistoricLoaded,
+    loaded: historicPhase.isLoaded,
     symbols: Math.max(
-      toNumber((insights.engineState as any)?.config_set_symbols_processed),
-      toNumber((insights.engineState as any)?.prehistoric_symbols?.length),
+      historicPhase.symbolsProcessed,
+      historicPhase.symbolsTotal,
     ),
-    candlesProcessed: toNumber((insights.engineState as any)?.config_set_candles_processed),
-    indicationResults: toNumber((insights.engineState as any)?.config_set_indication_results),
-    strategyPositions: toNumber((insights.engineState as any)?.config_set_strategy_positions),
-    errors: toNumber((insights.engineState as any)?.config_set_errors),
-    lastProcessedAt: (insights.engineState as any)?.prehistoric_last_processed_at || null,
+    candlesProcessed: historicPhase.candlesProcessed,
+    indicationResults: historicPhase.indicationResults,
+    strategyPositions: historicPhase.strategyPositions,
+    errors: toNumber(engineState.config_set_errors),
+    lastProcessedAt: historicPhase.lastUpdatedAt,
   }
 
   const cyclesCompleted = Math.max(insights.engine.indicationCycles, toNumber(progression.cyclesCompleted))
@@ -77,6 +160,10 @@ export async function getConnectionObservability(connectionId: string) {
       ...insights.engine,
       activeSymbols: insights.activeSymbols.length,
       activeSymbolList: insights.activeSymbols,
+    },
+    phases: {
+      historic: historicPhase,
+      realtime: realtimePhase,
     },
     progression: {
       raw: progression,
