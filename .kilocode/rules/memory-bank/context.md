@@ -32,6 +32,7 @@ The template is a clean Next.js 16 starter with TypeScript and Tailwind CSS 4. I
 - [x] Tracking-heavy endpoints now share a unified dashboard snapshot helper so progression, engine progress, monitoring stats, and strategy/indication overview routes stop reporting false zeros or mock-only counts
 - [x] Quick Start now drives BingX selection in the top exchange selector and quickstart dialogs/log overviews follow the actively selected connection instead of a hardcoded default
 - [x] Trade engine status, connection info dialogs, and related monitoring views now derive connection-scoped live metrics from shared insights instead of disconnected per-view placeholders
+- [x] Added a shared connection observability layer so engine tracking, prehistoric progress, logs, indications, and strategy counts resolve from one relation and stay consistent across main status APIs and info dialogs
 
 ## Current Structure
 
@@ -52,6 +53,7 @@ The template is a clean Next.js 16 starter with TypeScript and Tailwind CSS 4. I
 | `lib/dashboard-tracking.ts` | Unified live tracking/count aggregation for monitoring and overview APIs | ✅ Added |
 | `lib/exchange-context.tsx` | Shared exchange selection with BingX quickstart preference | ✅ Updated |
 | `lib/connection-insights.ts` | Shared connection-scoped engine/log/tracking metrics for status and dialogs | ✅ Added |
+| `lib/connection-observability.ts` | Unified relation model for engine tracking, logs, prehistoric info, indications, and strategies | ✅ Added |
 
 ## Current Focus
 
@@ -68,6 +70,7 @@ The template is ready. Trading dashboard and connection log presentation were im
 9. Endpoint metrics now prioritize real progression/Redis snapshots over placeholder mock aggregates
 10. Quickstart UX now keeps connection-scoped dialogs and top-level exchange selection aligned to the current BingX/active connection
 11. Monitoring/status cards and connection info views now consume a shared real-data connection insight layer to keep UI state and backend tracking aligned after quickstart activation
+12. Main-page and dialog consumers now share one observability relation to prevent engine/log/info drift between status cards, detailed logging, and connection information panels
 
 ## Quick Start Guide
 
@@ -131,3 +134,4 @@ export async function GET() {
 | 2026-04-10 | Reworked tracking-centric endpoints to consume unified live aggregation, removing hardcoded strategy overview data and reducing zero-count drift across progression, monitoring, and evaluation APIs |
 | 2026-04-10 | Updated exchange context and quickstart dialogs so BingX is auto-selected for quickstart and detailed/overview log data stays scoped to the selected connection |
 | 2026-04-10 | Added shared connection insights for status/dialog UIs, updated trade engine status responses to include real per-connection health/metrics, and verified BingX startup flow plus lint/typecheck |
+| 2026-04-11 | Added shared connection observability composition, updated trade-engine status/detail routes to expose consistent per-connection tracking/log/info data, and expanded the connection info dialog with unified engine relation metrics |

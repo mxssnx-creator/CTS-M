@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server"
 import { getRedisClient, initRedis, getActiveConnectionsForEngine } from "@/lib/redis-db"
 import { getGlobalTradeEngineCoordinator } from "@/lib/trade-engine"
-import { ProgressionStateManager } from "@/lib/progression-state-manager"
-import { getConnectionInsights } from "@/lib/connection-insights"
+import { getConnectionObservability } from "@/lib/connection-observability"
 
 export const dynamic = "force-dynamic"
 export const revalidate = 0
@@ -10,6 +9,8 @@ export const fetchCache = "force-no-store"
 
 export async function GET() {
   try {
+    const requestUrl = arguments[0] instanceof Request ? new URL(arguments[0].url) : null
+    const requestedConnectionId = requestUrl?.searchParams.get("connectionId") || null
     await initRedis()
     const client = getRedisClient()
     const coordinator = getGlobalTradeEngineCoordinator()
@@ -35,7 +36,10 @@ export async function GET() {
     const effectivelyRunning = isGloballyRunning || coordinatorRunning
     
     // Get active connections
-    const connections = await getActiveConnectionsForEngine()
+    let connections = await getActiveConnectionsForEngine()
+    if (requestedConnectionId) {
+      connections = connections.filter((conn: any) => conn.id === requestedConnectionId)
+    }
     
     if (connections.length === 0) {
       // Get all connections to explain why none are active
@@ -82,71 +86,82 @@ export async function GET() {
     const connectionStatuses = await Promise.all(
       connections.map(async (conn: any) => {
         try {
-          const insights = await getConnectionInsights(conn.id)
-          const progressionState = insights.tracking.progression
-          const positionsCount = insights.counts.positions
-          const tradesCount = insights.counts.trades
+          const observability = await getConnectionObservability(conn.id)
+          const progressionState = observability.progression.raw
+          const positionsCount = observability.counts.positions
+          const tradesCount = observability.counts.trades
 
           // Determine if this connection's engine is actively running
-          const connectionRunning = (effectivelyRunning && !isGloballyPaused) || insights.engine.status === "running"
+          const connectionRunning = (effectivelyRunning && !isGloballyPaused) || observability.engine.status === "running"
 
           return {
             id: conn.id,
             name: conn.name,
             exchange: conn.exchange,
             status: connectionRunning ? "running" : "stopped",
+            connectionId: conn.id,
+            connectionName: conn.name,
             enabled: conn.is_enabled_dashboard === true || conn.is_enabled_dashboard === "1",
             activelyUsing: conn.is_enabled_dashboard === true || conn.is_enabled_dashboard === "1",
             positions: positionsCount,
             trades: tradesCount,
             health: {
-              overall: insights.logLevels.error > 0 ? "degraded" : "healthy",
+              overall: observability.logSummary.error > 0 ? "degraded" : "healthy",
               components: {
                 indications: {
-                  status: insights.counts.indications > 0 ? "healthy" : "degraded",
-                  lastCycleDuration: insights.engine.indicationAvgDuration,
-                  errorCount: insights.logLevels.error,
+                  status: observability.counts.indications > 0 ? "healthy" : "degraded",
+                  lastCycleDuration: observability.engine.indicationAvgDuration,
+                  errorCount: observability.logSummary.error,
                   successRate: progressionState.cycleSuccessRate || 0,
                 },
                 strategies: {
-                  status: insights.counts.strategies > 0 ? "healthy" : "degraded",
-                  lastCycleDuration: insights.engine.strategyAvgDuration,
-                  errorCount: insights.logLevels.error,
+                  status: observability.counts.strategies > 0 ? "healthy" : "degraded",
+                  lastCycleDuration: observability.engine.strategyAvgDuration,
+                  errorCount: observability.logSummary.error,
                   successRate: progressionState.tradeSuccessRate || progressionState.cycleSuccessRate || 0,
                 },
                 realtime: {
-                  status: insights.engine.realtimeCycles > 0 || positionsCount > 0 ? "healthy" : "degraded",
-                  lastCycleDuration: insights.engine.realtimeAvgDuration,
-                  errorCount: insights.logLevels.error,
+                  status: observability.engine.realtimeCycles > 0 || positionsCount > 0 ? "healthy" : "degraded",
+                  lastCycleDuration: observability.engine.realtimeAvgDuration,
+                  errorCount: observability.logSummary.error,
                   successRate: progressionState.tradeSuccessRate || 0,
                 },
               },
             },
             metrics: {
-              indicationCycleCount: insights.engine.indicationCycles,
-              strategyCycleCount: insights.engine.strategyCycles,
-              realtimeCycleCount: insights.engine.realtimeCycles,
-              indicationAvgDuration: insights.engine.indicationAvgDuration,
-              strategyAvgDuration: insights.engine.strategyAvgDuration,
-              realtimeAvgDuration: insights.engine.realtimeAvgDuration,
-              cycleTimeMs: insights.engine.lastCycleDuration,
+              indicationCycleCount: observability.engine.indicationCycles,
+              strategyCycleCount: observability.engine.strategyCycles,
+              realtimeCycleCount: observability.engine.realtimeCycles,
+              indicationAvgDuration: observability.engine.indicationAvgDuration,
+              strategyAvgDuration: observability.engine.strategyAvgDuration,
+              realtimeAvgDuration: observability.engine.realtimeAvgDuration,
+              cycleTimeMs: observability.engine.lastCycleDuration,
             },
             summary: {
-              symbolsActive: Math.max(insights.activeSymbols.length, 1),
-              prehistoricDataSize: progressionState.prehistoricCandlesProcessed || progressionState.prehistoricCyclesCompleted || 0,
+              symbolsActive: Math.max(observability.engine.activeSymbols, 1),
+              prehistoricDataSize: observability.prehistoric.candlesProcessed || progressionState.prehistoricCandlesProcessed || progressionState.prehistoricCyclesCompleted || 0,
               indicationTypes: {
-                ...insights.indicationsByType,
-                total: insights.counts.indications,
+                ...observability.indications,
+                total: observability.counts.indications,
               },
-              strategyCounts: insights.strategyCounts,
-              realtimeCycles: insights.engine.realtimeCycles,
+              strategyCounts: observability.strategies,
+              realtimeCycles: observability.engine.realtimeCycles,
+              logs: observability.logSummary,
+              prehistoric: observability.prehistoric,
             },
             progression: {
-              cycles_completed: progressionState.cyclesCompleted || 0,
-              successful_cycles: progressionState.successfulCycles || 0,
-              failed_cycles: progressionState.failedCycles || 0,
+              cycles_completed: observability.progression.cyclesCompleted,
+              successful_cycles: observability.progression.successfulCycles,
+              failed_cycles: observability.progression.failedCycles,
+              cycle_success_rate: observability.progression.cycleSuccessRate.toFixed(1),
+              total_trades: observability.progression.totalTrades,
+              successful_trades: observability.progression.successfulTrades,
+              trade_success_rate: observability.progression.tradeSuccessRate.toFixed(1),
+              total_profit: observability.progression.totalProfit.toFixed(2),
+              last_cycle_time: observability.progression.lastCycleTime,
             },
             state: progressionState,
+            connection: observability,
           }
         } catch (error) {
           console.error(`[v0] [Status] Error processing connection ${conn.id}:`, error)
@@ -180,11 +195,19 @@ export async function GET() {
     const responseBody = {
       success: true,
       running: effectivelyRunning,
+      isRunning: effectivelyRunning,
       paused: isGloballyPaused,
       status: effectivelyRunning ? "running" : (isGloballyPaused ? "paused" : "stopped"),
       activeEngineCount: coordinator?.getActiveEngineCount() || 0,
       connections: connectionStatuses,
       summary,
+    }
+
+    if (requestedConnectionId) {
+      return NextResponse.json({
+        ...responseBody,
+        connection: connectionStatuses[0] || null,
+      })
     }
 
     console.log(`[v0] [Status] Returning ${connectionStatuses.length} active connections, global running: ${isGloballyRunning}`)
@@ -195,6 +218,7 @@ export async function GET() {
       {
         success: false,
         running: false,
+        isRunning: false,
         paused: false,
         status: "error",
         connections: [],

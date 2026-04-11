@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { initRedis, getAllConnections, getConnectionPositions, getConnectionTrades, getRedisClient, getSettings } from "@/lib/redis-db"
 import { ProgressionStateManager } from "@/lib/progression-state-manager"
 import { getProgressionLogs } from "@/lib/engine-progression-logs"
+import { getConnectionObservability } from "@/lib/connection-observability"
 
 function mapPhaseToType(phase: string) {
   if (phase.includes("indication")) return "indication"
@@ -189,6 +190,7 @@ export async function GET(request: Request) {
     const client = getRedisClient()
     const perConnection = await Promise.all(
       activeConnections.map(async (conn: any, index: number) => {
+        const observability = await getConnectionObservability(conn.id)
         const state = (await getSettings(`trade_engine_state:${conn.id}`)) || {}
         const progression = progressionStates[index] || {}
         const symbols = Array.isArray((state as any).symbols)
@@ -260,6 +262,7 @@ export async function GET(request: Request) {
             lastProcessedAt: (state as any).prehistoric_last_processed_at || null,
           },
           intervalsProcessed: processedIntervals,
+          observability,
         }
       }),
     )
@@ -440,6 +443,14 @@ export async function GET(request: Request) {
       lastUpdate: new Date().toISOString(),
       errors: logs.filter((log: any) => log.type === "error").length,
       warnings: logs.filter((log: any) => String(log.message || "").toLowerCase().includes("warn")).length,
+      relatedConnections: perConnection.map((item) => ({
+        connectionId: item.id,
+        status: item.observability.engine.status,
+        logs: item.observability.logSummary,
+        indications: item.observability.indications,
+        strategies: item.observability.strategies,
+        prehistoric: item.observability.prehistoric,
+      })),
     }
 
     return NextResponse.json({

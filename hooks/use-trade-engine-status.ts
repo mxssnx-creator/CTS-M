@@ -22,6 +22,9 @@ export interface TradeEngineStatusData {
     total_profit: string
     last_cycle_time: string | null
   }
+  summary?: Record<string, unknown>
+  metrics?: Record<string, unknown>
+  health?: Record<string, unknown>
 }
 
 interface UseTradeEngineStatusOptions {
@@ -58,9 +61,15 @@ export function useTradeEngineStatus(options: UseTradeEngineStatusOptions = {}) 
       }
 
       const data = await response.json()
-      const statusArray = connectionId 
-        ? (Array.isArray(data) ? data : [data])
-        : (Array.isArray(data) ? data : data.statuses || [])
+      const statusArray = Array.isArray(data)
+        ? data
+        : Array.isArray(data.connections)
+          ? data.connections
+          : data.connection
+            ? [data.connection]
+            : Array.isArray(data.statuses)
+              ? data.statuses
+              : []
       
       setStatuses(statusArray)
       setIsLoading(false)

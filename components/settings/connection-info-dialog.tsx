@@ -39,6 +39,7 @@ export function ConnectionInfoDialog({ open, onOpenChange, connectionId, connect
         fetch(`/api/data/strategies?connectionId=${connectionId}`),
         fetch(`/api/positions/${connectionId}`),
       ])
+      const observabilityRes = await fetch(`/api/trade-engine/status?connectionId=${connectionId}`)
 
       const indications = indicationsRes.ok ? await indicationsRes.json() : { indications: [] }
       const settings = settingsRes.ok ? await settingsRes.json() : {}
@@ -46,6 +47,7 @@ export function ConnectionInfoDialog({ open, onOpenChange, connectionId, connect
       const progression = progressionRes.ok ? await progressionRes.json() : { progressionState: null }
       const strategies = strategiesRes.ok ? await strategiesRes.json() : { data: [] }
       const positions = positionsRes.ok ? await positionsRes.json() : { positions: [] }
+      const observability = observabilityRes.ok ? await observabilityRes.json() : { connection: null }
 
       setInfo({
         indications: indications.indications || [],
@@ -54,6 +56,7 @@ export function ConnectionInfoDialog({ open, onOpenChange, connectionId, connect
         progression: progression.progressionState || null,
         strategies: strategies.data || [],
         positions: positions.positions || positions.data || [],
+        observability: observability.connection || null,
       })
     } catch (error) {
       console.error("[v0] Failed to load connection info:", error)
@@ -127,6 +130,55 @@ export function ConnectionInfoDialog({ open, onOpenChange, connectionId, connect
                   </div>
                 </div>
               </div>
+            )}
+
+            {info?.observability && (
+              <>
+                <Separator />
+                <div className="space-y-3">
+                  <h3 className="text-lg font-semibold">Engine Tracking Relation</h3>
+                  <div className="grid grid-cols-2 gap-4 text-sm md:grid-cols-4">
+                    <div className="p-3 border rounded">
+                      <div className="font-medium mb-1">Engine Status</div>
+                      <div className="text-2xl font-bold capitalize">{info.observability.status || info.observability.engine?.status || "stopped"}</div>
+                    </div>
+                    <div className="p-3 border rounded">
+                      <div className="font-medium mb-1">Tracked Logs</div>
+                      <div className="text-2xl font-bold">{info.observability.logSummary?.total || 0}</div>
+                    </div>
+                    <div className="p-3 border rounded">
+                      <div className="font-medium mb-1">Indications</div>
+                      <div className="text-2xl font-bold">{info.observability.counts?.indications || 0}</div>
+                    </div>
+                    <div className="p-3 border rounded">
+                      <div className="font-medium mb-1">Strategies</div>
+                      <div className="text-2xl font-bold">{info.observability.counts?.strategies || 0}</div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4 text-xs md:grid-cols-4">
+                    <div className="rounded border p-3">
+                      <div className="font-medium mb-1">Prehistoric</div>
+                      <div>{info.observability.prehistoric?.loaded ? "Loaded" : "Pending"}</div>
+                      <div className="text-muted-foreground">Symbols: {info.observability.prehistoric?.symbols || 0}</div>
+                    </div>
+                    <div className="rounded border p-3">
+                      <div className="font-medium mb-1">Indication Types</div>
+                      <div>D {info.observability.indications?.direction || 0} / M {info.observability.indications?.move || 0}</div>
+                      <div className="text-muted-foreground">A {info.observability.indications?.active || 0} / O {info.observability.indications?.optimal || 0}</div>
+                    </div>
+                    <div className="rounded border p-3">
+                      <div className="font-medium mb-1">Strategy Stages</div>
+                      <div>B {info.observability.strategies?.base || 0} / M {info.observability.strategies?.main || 0}</div>
+                      <div className="text-muted-foreground">R {info.observability.strategies?.real || 0} / L {info.observability.strategies?.live || 0}</div>
+                    </div>
+                    <div className="rounded border p-3">
+                      <div className="font-medium mb-1">Cycle Health</div>
+                      <div>{(info.observability.progression?.cycleSuccessRate || 0).toFixed(1)}% success</div>
+                      <div className="text-muted-foreground">Trades: {info.observability.progression?.totalTrades || 0}</div>
+                    </div>
+                  </div>
+                </div>
+              </>
             )}
 
             <Separator />
