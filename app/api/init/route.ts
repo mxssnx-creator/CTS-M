@@ -5,6 +5,7 @@ import { completeStartup } from "@/lib/startup-coordinator"
 import { initializeTradeEngineAutoStart, isAutoStartInitialized } from "@/lib/trade-engine-auto-start"
 
 let serverStartupComplete = false
+let serverStartupPromise: Promise<void> | null = null
 
 function toBoolean(value: unknown): boolean {
   return value === true || value === "1" || value === "true"
@@ -15,18 +16,23 @@ export async function GET() {
 
   try {
     if (!serverStartupComplete) {
-      console.log("[v0] /api/init: Running complete startup sequence...")
-      await completeStartup()
-      serverStartupComplete = true
-      console.log("[v0] /api/init: Startup sequence complete")
+      if (!serverStartupPromise) {
+        serverStartupPromise = (async () => {
+          console.log("[v0] /api/init: Running complete startup sequence...")
+          await completeStartup()
+          serverStartupComplete = true
+          console.log("[v0] /api/init: Startup sequence complete")
+        })().finally(() => {
+          serverStartupPromise = null
+        })
+      }
+      await serverStartupPromise
     }
 
     if (!isAutoStartInitialized()) {
       console.log("[v0] /api/init: Initializing auto-start...")
       await initializeTradeEngineAutoStart()
     }
-
-    await fetch(new URL("/api/dev-preview", "http://localhost:3000").toString()).catch(() => null)
 
     await initRedis()
 

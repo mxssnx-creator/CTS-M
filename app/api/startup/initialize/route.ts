@@ -7,6 +7,7 @@ import { initializeTradeEngineAutoStart, isAutoStartInitialized } from "@/lib/tr
 export const runtime = "nodejs"
 
 let startupComplete = false
+let startupPromise: Promise<void> | null = null
 
 /**
  * Canonical startup initialization.
@@ -16,10 +17,17 @@ let startupComplete = false
 export async function POST() {
   try {
     if (!startupComplete) {
-      console.log("[v0] [Startup API] Running complete startup sequence...")
-      await completeStartup()
-      startupComplete = true
-      console.log("[v0] [Startup API] Startup sequence complete")
+      if (!startupPromise) {
+        startupPromise = (async () => {
+          console.log("[v0] [Startup API] Running complete startup sequence...")
+          await completeStartup()
+          startupComplete = true
+          console.log("[v0] [Startup API] Startup sequence complete")
+        })().finally(() => {
+          startupPromise = null
+        })
+      }
+      await startupPromise
     }
 
     if (!isAutoStartInitialized()) {
