@@ -4,14 +4,14 @@
   "private": true,
   "scripts": {
     "build": "./node_modules/.bin/next build",
-    "dev": "next dev -p 3001",
+    "dev": "next dev -p 3000",
     "test": "sh -c 'fuser -k 3001/tcp >/dev/null 2>&1 || true; timeout -s TERM 90s bash -lc \"npm run dev >/tmp/tmp3-test-dev.log 2>&1 & DEV_PID=$!; trap \\\"kill $DEV_PID >/dev/null 2>&1 || true\\\" EXIT; for i in {1..45}; do curl -sf http://localhost:3001 >/dev/null && break; sleep 1; done; curl -sf http://localhost:3001/main >/dev/null && curl -sf http://localhost:3001/strategies >/dev/null && curl -sf http://localhost:3001/settings >/dev/null && curl -sf http://localhost:3001/monitoring >/dev/null\"'",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "verify:offline": "bun typecheck && bun lint && bun scripts/verify-api-routes-offline.ts && bun scripts/test-complete-system.js",
     "verify:online": "bun scripts/verify-api-endpoints.ts",
     "verify:all": "bun run verify:offline && bun run build && bun run verify:online",
-    "start": "./node_modules/.bin/next start -p 3001",
+    "start": "./node_modules/.bin/next start -p 3000",
     "vercel-build": "./node_modules/.bin/next build"
   },
   "dependencies": {
