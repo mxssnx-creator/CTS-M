@@ -419,7 +419,8 @@ export class TradeEngineManager {
       })
 
       const prehistoricEnd = new Date()
-      const prehistoricStart = new Date(prehistoricEnd.getTime() - 30 * 24 * 60 * 60 * 1000)
+      const prehistoricDays = Math.max(1, Number(settings.prehistoricDataDays) || 1)
+      const prehistoricStart = new Date(prehistoricEnd.getTime() - prehistoricDays * 24 * 60 * 60 * 1000)
 
       // PHASE 5-6: Initialize config sets and process prehistoric data through them
       console.log("[v0] [Prehistoric] Phase 5-6: Initializing config sets...")
@@ -452,6 +453,8 @@ export class TradeEngineManager {
         prehistoric_data_loaded: true,
         prehistoric_data_start: prehistoricStart.toISOString(),
         prehistoric_data_end: prehistoricEnd.toISOString(),
+        prehistoric_timeframe: timeframeString,
+        prehistoric_days: prehistoricDays,
         prehistoric_symbols: symbols,
         config_sets_initialized: true,
         config_set_indication_results: processingResult.indicationResults,

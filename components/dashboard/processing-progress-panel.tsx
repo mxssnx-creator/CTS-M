@@ -23,6 +23,9 @@ interface UnifiedProcessingOverview {
         phase?: string
         cycleSuccessRate?: number
         totalTrades?: number
+        cyclesCompleted?: number
+        successfulCycles?: number
+        failedCycles?: number
       }
       phases?: {
         historic?: {
@@ -30,6 +33,7 @@ interface UnifiedProcessingOverview {
           isProcessing?: boolean
           symbolsProcessed?: number
           symbolsTotal?: number
+          durationMs?: number
         }
         realtime?: {
           isActive?: boolean
@@ -43,6 +47,27 @@ interface UnifiedProcessingOverview {
       counts?: {
         logs?: number
       }
+      prehistoric?: {
+        loaded?: boolean
+        lastProcessedAt?: string | null
+        candlesProcessed?: number
+      }
+      cycles?: {
+        completed?: number
+        successful?: number
+        failed?: number
+        successRatio?: number
+      }
+      ratios?: {
+        strategiesPerIndication?: number
+        logsPerCycle?: number
+      }
+      averages?: {
+        realtimeCycleDurationMs?: number
+        realProfitFactor?: number
+        realDrawdownHours?: number
+        realPositionEvaluation?: number
+      }
       strategies?: Record<string, number>
       indications?: Record<string, number>
     } | null
@@ -54,6 +79,11 @@ export function ProcessingProgressPanel({ connectionId }: ProcessingProgressPane
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [validation, setValidation] = useState<{ valid: boolean; issues: string[] } | null>(null)
+  const strategyIndicationRatio = metrics
+    ? (metrics.evaluationCounts.indicationBase + metrics.evaluationCounts.indicationMain) > 0
+      ? ((metrics.evaluationCounts.strategyBase + metrics.evaluationCounts.strategyMain) / (metrics.evaluationCounts.indicationBase + metrics.evaluationCounts.indicationMain)).toFixed(2)
+      : '0.00'
+    : '0.00'
 
   useEffect(() => {
     if (!connectionId) {
@@ -82,12 +112,12 @@ export function ProcessingProgressPanel({ connectionId }: ProcessingProgressPane
             phases: {
               prehistoric: {
                 status: processing.phases?.historic?.isLoaded ? 'completed' : processing.phases?.historic?.isProcessing ? 'running' : 'idle',
-                cycleCount: 0,
+                cycleCount: processing.cycles?.completed || processing.progression?.cyclesCompleted || 0,
                 progress: processing.phases?.historic?.symbolsTotal ? ((processing.phases.historic.symbolsProcessed || 0) / processing.phases.historic.symbolsTotal) * 100 : 0,
                 itemsProcessed: processing.phases?.historic?.symbolsProcessed || 0,
                 itemsTotal: processing.phases?.historic?.symbolsTotal || 0,
                 currentTimeframe: 'historical',
-                duration: 0,
+                duration: processing.averages?.realtimeCycleDurationMs || 0,
               },
               realtime: {
                 status: normalized.isInterrupted ? 'error' : processing.phases?.realtime?.isActive ? 'running' : 'idle',
@@ -101,26 +131,26 @@ export function ProcessingProgressPanel({ connectionId }: ProcessingProgressPane
               },
               indication: {
                 status: (processing.indications?.direction || 0) > 0 ? 'running' : 'idle',
-                cycleCount: 0,
+                cycleCount: processing.cycles?.successful || processing.progression?.successfulCycles || 0,
                 progress: Math.min((processing.indications?.direction || 0) + (processing.indications?.move || 0), 100),
                 itemsProcessed: (processing.indications?.direction || 0) + (processing.indications?.move || 0),
                 itemsTotal: Math.max((processing.indications?.active || 0) + (processing.indications?.optimal || 0), 1),
                 currentTimeframe: 'signals',
-                duration: 0,
+                duration: processing.averages?.realtimeCycleDurationMs || 0,
               },
               strategy: {
                 status: ((processing.strategies?.base || 0) + (processing.strategies?.main || 0) + (processing.strategies?.real || 0)) > 0 ? 'running' : 'idle',
-                cycleCount: 0,
+                cycleCount: processing.cycles?.failed || processing.progression?.failedCycles || 0,
                 progress: Math.min((processing.strategies?.live || 0) * 10, 100),
                 itemsProcessed: (processing.strategies?.base || 0) + (processing.strategies?.main || 0) + (processing.strategies?.real || 0),
                 itemsTotal: Math.max((processing.strategies?.live || 0), 1),
                 currentTimeframe: 'strategy',
-                duration: 0,
+                duration: processing.averages?.realtimeCycleDurationMs || 0,
               },
             },
             performanceMetrics: {
-              avgCycleDuration: 0,
-              totalProcessingTime: 0,
+              avgCycleDuration: processing.averages?.realtimeCycleDurationMs || 0,
+              totalProcessingTime: processing.phases?.historic?.durationMs || 0,
             },
             pseudoPositions: {
               totalCreated: processing.progression?.totalTrades || 0,
@@ -314,6 +344,20 @@ export function ProcessingProgressPanel({ connectionId }: ProcessingProgressPane
           </div>
         </div>
 
+        <div className="pt-2 border-t border-slate-700 space-y-1">
+          <div className="text-slate-400 font-medium mb-1">Cycle Details</div>
+          <div className="flex justify-between">
+            <span className="text-slate-400">Completed / Success / Failed:</span>
+            <span className="text-slate-200 font-medium">
+              {metrics.phases.prehistoric.cycleCount} / {metrics.phases.indication.cycleCount} / {metrics.phases.strategy.cycleCount}
+            </span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-slate-400">Strategy/Indication Ratio:</span>
+            <span className="text-slate-200 font-medium">{strategyIndicationRatio}</span>
+          </div>
+        </div>
+      
         {/* Last Updated */}
         <div className="pt-2 border-t border-slate-700 text-slate-500 text-xs">
           Last updated: {new Date(metrics.timestamp).toLocaleTimeString()}

@@ -4,6 +4,62 @@ import { StrategyEngine } from "@/lib/strategies"
 import { getActiveStrategies, getBestPerformingStrategies } from "@/lib/db-helpers"
 import { loadConnections } from "@/lib/file-storage"
 
+function average(values: number[]) {
+  if (values.length === 0) return 0
+  return values.reduce((sum, value) => sum + value, 0) / values.length
+}
+
+function buildStrategyDetails(strategies: any[]) {
+  const valid = strategies.filter((item) => item.validation_state === "valid" || item.is_validated)
+  const real = strategies.filter((item) => item.mainType === "real" || item.main_type === "real" || item.strategy_type === "real")
+
+  const byStage = Object.entries(
+    strategies.reduce<Record<string, { count: number; valid: number; liveReady: number; profitFactor: number; drawdown: number }>>((acc, item) => {
+      const key = item.mainType || item.main_type || item.strategy_type || item.stage || "unknown"
+      const current = acc[key] || { count: 0, valid: 0, liveReady: 0, profitFactor: 0, drawdown: 0 }
+      current.count += 1
+      current.valid += item.validation_state === "valid" || item.is_validated ? 1 : 0
+      current.liveReady += item.should_open_position ? 1 : 0
+      current.profitFactor += Number(item.avg_profit_factor ?? item.profit_factor ?? 0) || 0
+      current.drawdown += Number(item.stats?.drawdown_hours ?? item.drawdown_hours ?? 0) || 0
+      acc[key] = current
+      return acc
+    }, {}),
+  ).map(([stage, value]) => ({
+    stage,
+    count: value.count,
+    valid: value.valid,
+    liveReady: value.liveReady,
+    validRatio: value.count > 0 ? value.valid / value.count : 0,
+    avgProfitFactor: value.count > 0 ? value.profitFactor / value.count : 0,
+    avgDrawdownHours: value.count > 0 ? value.drawdown / value.count : 0,
+  }))
+
+  return {
+    counts: {
+      total: strategies.length,
+      valid: valid.length,
+      invalid: strategies.length - valid.length,
+      real: real.length,
+      liveReady: strategies.filter((item) => item.should_open_position).length,
+    },
+    ratios: {
+      valid: strategies.length > 0 ? valid.length / strategies.length : 0,
+      real: strategies.length > 0 ? real.length / strategies.length : 0,
+      liveReady: strategies.length > 0 ? strategies.filter((item) => item.should_open_position).length / strategies.length : 0,
+    },
+    averages: {
+      profitFactor: average(strategies.map((item) => Number(item.avg_profit_factor ?? item.profit_factor ?? 0) || 0)),
+      drawdownHours: average(strategies.map((item) => Number(item.stats?.drawdown_hours ?? item.drawdown_hours ?? 0) || 0)),
+      winRate: average(strategies.map((item) => Number(item.stats?.win_rate ?? item.win_rate ?? 0) || 0)),
+      realProfitFactor: average(real.map((item) => Number(item.avg_profit_factor ?? item.profit_factor ?? 0) || 0)),
+      realDrawdownHours: average(real.map((item) => Number(item.stats?.drawdown_hours ?? item.drawdown_hours ?? 0) || 0)),
+      realPositionEvaluation: average(real.map((item) => Number(item.stats?.total_trades ?? item.total_trades ?? item.last_positions?.length ?? 0) || 0)),
+    },
+    stages: byStage,
+  }
+}
+
 async function getRealStrategies(connectionId: string): Promise<any[]> {
   try {
     // Try to get active strategies from Redis first
@@ -109,6 +165,7 @@ export async function GET(request: NextRequest) {
       isDemo,
       connectionId,
       count: strategies.length,
+      details: buildStrategyDetails(strategies),
     })
   } catch (error) {
     console.error("[v0] Get strategies error:", error)

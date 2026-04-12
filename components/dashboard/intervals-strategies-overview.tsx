@@ -31,6 +31,9 @@ interface StrategyStats {
   activePositions: number
   totalIndications: number
   successRate: number
+   avgProfitFactor?: number
+   avgDrawdownHours?: number
+   countSets?: number
 }
 
 interface SystemStatsResponse {
@@ -57,6 +60,11 @@ interface SystemStatsResponse {
       }
       indications?: Record<string, number>
       strategies?: Record<string, number>
+      averages?: {
+        realProfitFactor?: number
+        realDrawdownHours?: number
+        realPositionEvaluation?: number
+      }
     }
   }
   activeConnections?: {
@@ -149,6 +157,7 @@ export function IntervalsStrategiesOverview({ connections }: { connections: any[
           activePositions: statsData.activeConnections?.total || 0,
           totalIndications: indicationCounts.direction || 0,
           successRate: normalized.isInterrupted ? 0 : 100,
+          countSets: strategyCounts.base || 0,
         },
         {
           type: "main",
@@ -157,6 +166,7 @@ export function IntervalsStrategiesOverview({ connections }: { connections: any[
           activePositions: statsData.activeConnections?.active || 0,
           totalIndications: indicationCounts.move || 0,
           successRate: normalized.isRecovering ? 50 : normalized.isInterrupted ? 0 : 100,
+          countSets: strategyCounts.main || 0,
         },
         {
           type: "real",
@@ -165,6 +175,9 @@ export function IntervalsStrategiesOverview({ connections }: { connections: any[
           activePositions: statsData.activeConnections?.liveTrade || 0,
           totalIndications: indicationCounts.active || 0,
           successRate: normalized.isInterrupted ? 0 : 100,
+          avgProfitFactor: processing?.averages?.realProfitFactor || 0,
+          avgDrawdownHours: processing?.averages?.realDrawdownHours || 0,
+          countSets: strategyCounts.real || 0,
         },
       ]
       setStrategies(fallbackStrategies)
@@ -430,6 +443,20 @@ export function IntervalsStrategiesOverview({ connections }: { connections: any[
                     <div>
                       <div className="text-muted-foreground text-xs">Success Rate</div>
                       <div className="text-lg font-semibold">{strategy.successRate.toFixed(1)}%</div>
+                    </div>
+                  </div>
+                  <div className="mt-3 grid grid-cols-3 gap-4 text-sm">
+                    <div>
+                      <div className="text-muted-foreground text-xs">Count Sets</div>
+                      <div className="text-base font-semibold">{strategy.countSets || 0}</div>
+                    </div>
+                    <div>
+                      <div className="text-muted-foreground text-xs">Avg Profit Factor</div>
+                      <div className="text-base font-semibold">{(strategy.avgProfitFactor || 0).toFixed(2)}</div>
+                    </div>
+                    <div>
+                      <div className="text-muted-foreground text-xs">Avg Drawdown Time</div>
+                      <div className="text-base font-semibold">{(strategy.avgDrawdownHours || 0).toFixed(1)}h</div>
                     </div>
                   </div>
                 </div>

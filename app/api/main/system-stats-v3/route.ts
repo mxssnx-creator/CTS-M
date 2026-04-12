@@ -14,6 +14,11 @@ import { buildIndicationStats, buildPerformanceMetrics, buildStrategyStats, buil
 import { getConnectionObservability } from "@/lib/connection-observability"
 import { validateMainpageOverview } from "@/lib/mainpage-validation"
 
+function average(values: number[]) {
+  if (values.length === 0) return 0
+  return values.reduce((sum, value) => sum + value, 0) / values.length
+}
+
 export const dynamic = "force-dynamic"
 export const revalidate = 0
 export const fetchCache = "force-no-store"
@@ -161,6 +166,31 @@ export async function GET() {
         logSummary: primaryObservability.logSummary,
         strategies: primaryObservability.strategies,
         indications: primaryObservability.indications,
+        prehistoric: primaryObservability.prehistoric,
+        cycles: {
+          completed: primaryObservability.progression.cyclesCompleted,
+          successful: primaryObservability.progression.successfulCycles,
+          failed: primaryObservability.progression.failedCycles,
+          successRatio: primaryObservability.progression.cycleSuccessRate / 100,
+        },
+        ratios: {
+          strategiesPerIndication: primaryObservability.counts.indications > 0
+            ? primaryObservability.counts.strategies / primaryObservability.counts.indications
+            : 0,
+          logsPerCycle: primaryObservability.progression.cyclesCompleted > 0
+            ? primaryObservability.counts.logs / primaryObservability.progression.cyclesCompleted
+            : 0,
+        },
+        averages: {
+          realtimeCycleDurationMs: average([
+            primaryObservability.phases.realtime.avgDurationMs.indications,
+            primaryObservability.phases.realtime.avgDurationMs.strategies,
+            primaryObservability.phases.realtime.avgDurationMs.realtime,
+          ].filter((value) => value > 0)),
+          realProfitFactor: strategyStats?.real?.profitFactor250 || strategyStats?.real?.profitFactor50 || 0,
+          realDrawdownHours: strategyStats?.real?.drawdownHours || 0,
+          realPositionEvaluation: strategyStats?.real?.count || 0,
+        },
       } : null,
     }
     

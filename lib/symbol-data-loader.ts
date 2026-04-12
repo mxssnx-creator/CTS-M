@@ -8,7 +8,7 @@ import { getRedisClient, initRedis } from "@/lib/redis-db"
 import { DataSyncManager } from "@/lib/data-sync-manager"
 import { logProgressionEvent } from "@/lib/engine-progression-logs"
 
-export type Timeframe = "1m" | "5m" | "15m" | "30m" | "1h" | "4h" | "8h" | "12h" | "1d" | "1w" | "1M"
+export type Timeframe = "1s" | "1m" | "5m" | "15m" | "30m" | "1h" | "4h" | "8h" | "12h" | "1d" | "1w" | "1M"
 
 export interface SymbolDataLoadConfig {
   connectionId: string
@@ -87,7 +87,7 @@ export async function loadSymbolDataByTimeframe(config: SymbolDataLoadConfig): P
   }
 
   const batchSize = config.batchSize || 5
-  const daysBack = config.daysBack || 30
+  const daysBack = config.daysBack || 1
 
   try {
     await initRedis()
@@ -267,11 +267,33 @@ async function loadSingleSymbolTimeframe(
     // Load only missing ranges for high-performance incremental sync.
     for (const range of syncStatus.missingRanges) {
       const rangeMs = Math.max(0, range.end.getTime() - range.start.getTime())
-      const minutes = Math.max(1, Math.floor(rangeMs / (60 * 1000)))
+      const timeframeMs = timeframe === "1s"
+        ? 1000
+        : timeframe === "1m"
+          ? 60 * 1000
+          : timeframe === "5m"
+            ? 5 * 60 * 1000
+            : timeframe === "15m"
+              ? 15 * 60 * 1000
+              : timeframe === "30m"
+                ? 30 * 60 * 1000
+                : timeframe === "1h"
+                  ? 60 * 60 * 1000
+                  : timeframe === "4h"
+                    ? 4 * 60 * 60 * 1000
+                    : timeframe === "8h"
+                      ? 8 * 60 * 60 * 1000
+                      : timeframe === "12h"
+                        ? 12 * 60 * 60 * 1000
+                        : timeframe === "1d"
+                          ? 24 * 60 * 60 * 1000
+                          : timeframe === "1w"
+                            ? 7 * 24 * 60 * 60 * 1000
+                            : 30 * 24 * 60 * 60 * 1000
+      const rangeRecordCount = Math.max(1, Math.ceil(rangeMs / timeframeMs))
 
       // Simulate/fetch market data for this specific range
       // In production, this would call the exchange connector with explicit start/end.
-      const rangeRecordCount = Math.max(10, Math.floor(minutes * 0.7))
       totalRecordCount += rangeRecordCount
       loadedRanges.push({
         startDate: range.start.toISOString(),

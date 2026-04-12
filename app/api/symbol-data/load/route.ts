@@ -23,8 +23,8 @@ export async function POST(request: NextRequest) {
     const {
       connection_id,
       symbols = [],
-      timeframes = ["1h", "4h", "1d"],
-      days_back = 30,
+      timeframes = ["1s"],
+      days_back = 1,
       batch_size = 5,
     } = body
 

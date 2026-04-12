@@ -50,6 +50,8 @@ The template is a clean Next.js 16 starter with TypeScript and Tailwind CSS 4. I
 - [x] Connection info dialog now resolves real tracked counts/settings from observability and live settings payload shapes so dialog values stay aligned with backend tracking
 - [x] Comprehensive dev test script now supports configurable app URLs for sandbox-backed verification instead of assuming localhost only
 - [x] Startup and preview bootstrap paths now serialize initialization work so layout render, `/api/init`, and `/api/startup/initialize` do not race each other and stall preview startup
+- [x] Systemwide prehistoric defaults now load the last 1 day at `1s`, preserve exact prehistoric start/end coordinates, and estimate missing-range backfills by the selected timeframe interval instead of coarse minute buckets
+- [x] Main stats, processing, intervals/strategies, and connection info surfaces now expose cycle totals, ratios, set counts, and real-strategy averages including profit factor, drawdown time, and real position evaluation summaries
 
 ## Current Structure
 
@@ -101,6 +103,11 @@ The template is a clean Next.js 16 starter with TypeScript and Tailwind CSS 4. I
 | `lib/init-app.ts` | App initialization is now guarded by a shared in-flight promise to prevent concurrent startup races | ✅ Updated |
 | `app/api/init/route.ts` | Init route now serializes startup and no longer self-fetches dev-preview during bootstrap | ✅ Updated |
 | `app/api/startup/initialize/route.ts` | Startup route now serializes complete-startup execution to avoid duplicate bootstrap work | ✅ Updated |
+| `app/api/symbol-data/load/route.ts` | Symbol-data load defaults now target 1 day of `1s` timeframe prehistoric loading | ✅ Updated |
+| `lib/symbol-data-loader.ts` | Missing-range load sizing now respects selected timeframe intervals including `1s` | ✅ Updated |
+| `lib/trade-engine/engine-manager.ts` | Prehistoric processing now records configured day span and exact timeframe metadata in engine state | ✅ Updated |
+| `app/api/data/indications/route.ts` | Indications API now returns detailed counts, ratios, averages, and per-type summaries | ✅ Updated |
+| `app/api/data/strategies/route.ts` | Strategies API now returns stage counts, ratios, and real-strategy aggregate metrics | ✅ Updated |
 
 ## Current Focus
 
@@ -133,6 +140,8 @@ The template is ready. Trading dashboard and connection log presentation were im
 25. Dashboard overview metrics now pull real profits, win rates, and symbol profit factors from stored trades/positions so the main page no longer reports placeholder zeros when exchange-backed records exist
 26. Dialog and progression-adjacent widgets are now narrowed onto the same real observability/settings sources, reducing drift between main cards, connection dialogs, and tracking views
 27. Preview boot is now less likely to hang because the app no longer triggers overlapping startup sequences from layout/init/startup endpoints at the same time
+28. Prehistoric loading defaults and progress accounting are now tighter: default scope is 1 day at `1s`, state records the real prehistoric timerange, and missing-range processing aligns with the configured interval granularity
+29. Informational dashboard surfaces now include richer cycles, indication, and strategy detail with ratios and real-stage averages so operators can inspect set counts and quality metrics directly from shared systemwide payloads
 
 ## Quick Start Guide
 
@@ -211,3 +220,4 @@ export async function GET() {
 | 2026-04-11 | Propagated main-page validation state into statistics, processing, and intervals/strategies widgets so invalid consolidated data is blocked from rendering, making dashboard values more trustworthy and explicitly source-validated |
 | 2026-04-12 | Replaced remaining main-page placeholder statistics/symbol values with trade- and position-derived metrics, aligned connection info dialog payload normalization with real observability/settings data, and updated the comprehensive dev tester to support sandbox app URLs |
 | 2026-04-12 | Fixed preview startup race conditions by serializing initialization in `lib/init-app.ts`, `/api/init`, and `/api/startup/initialize`, and removed the recursive init-to-dev-preview bootstrap fetch |
+| 2026-04-12 | Changed prehistoric defaults to 1 day at `1s`, aligned missing-range loading to timeframe intervals, and expanded systemwide strategy/indication info payloads with cycles, ratios, set counts, and real-stage averages |

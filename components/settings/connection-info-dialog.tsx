@@ -24,6 +24,9 @@ export function ConnectionInfoDialog({ open, onOpenChange, connectionId, connect
   const [loading, setLoading] = useState(true)
   const [info, setInfo] = useState<any>(null)
 
+  const strategyDetails = info?.strategiesDetails
+  const indicationDetails = info?.indicationsDetails
+
   useEffect(() => {
     if (open) {
       loadInfo()
@@ -39,10 +42,11 @@ export function ConnectionInfoDialog({ open, onOpenChange, connectionId, connect
         fetch(`/api/settings/connections/${connectionId}/settings`),
         fetch(`/api/settings/connections/${connectionId}/preset-type`),
       ])
-      const [progressionRes, strategiesRes, positionsRes] = await Promise.all([
+      const [progressionRes, strategiesRes, positionsRes, indicationsDataRes] = await Promise.all([
         fetch(`/api/connections/progression/${connectionId}/logs`),
         fetch(`/api/data/strategies?connectionId=${connectionId}`),
         fetch(`/api/positions/${connectionId}`),
+        fetch(`/api/data/indications?connectionId=${connectionId}`),
       ])
       const observabilityRes = await fetch(`/api/trade-engine/status?connectionId=${connectionId}`)
 
@@ -52,6 +56,7 @@ export function ConnectionInfoDialog({ open, onOpenChange, connectionId, connect
       const progression = progressionRes.ok ? await progressionRes.json() : { progressionState: null }
       const strategies = strategiesRes.ok ? await strategiesRes.json() : { data: [] }
       const positions = positionsRes.ok ? await positionsRes.json() : { positions: [] }
+      const indicationsData = indicationsDataRes.ok ? await indicationsDataRes.json() : { details: null }
       const observability = observabilityRes.ok ? await observabilityRes.json() : { connection: null }
 
       const indicationsList = Array.isArray(indications)
@@ -74,8 +79,10 @@ export function ConnectionInfoDialog({ open, onOpenChange, connectionId, connect
         presetType: presetType.presetType,
         progression: progression.progressionState || null,
         strategies: strategies.data || [],
+        strategiesDetails: strategies.details || null,
         positions: positions.positions || positions.data || [],
         observability: observability.connection || null,
+        indicationsDetails: indicationsData.details || null,
       })
     } catch (error) {
       console.error("[v0] Failed to load connection info:", error)
@@ -219,6 +226,18 @@ export function ConnectionInfoDialog({ open, onOpenChange, connectionId, connect
             {/* Active Indications */}
             <div className="space-y-3">
               <h3 className="text-lg font-semibold">Active Indications ({info?.indications?.length || 0})</h3>
+              {indicationDetails && (
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div className="p-3 border rounded">
+                    <div className="font-medium mb-1">Enabled Ratio</div>
+                    <div className="text-2xl font-bold">{((indicationDetails.ratios?.enabled || 0) * 100).toFixed(1)}%</div>
+                  </div>
+                  <div className="p-3 border rounded">
+                    <div className="font-medium mb-1">Avg Profit Factor</div>
+                    <div className="text-2xl font-bold">{(indicationDetails.averages?.profitFactor || 0).toFixed(2)}</div>
+                  </div>
+                </div>
+              )}
               {!info?.indications || info.indications.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No active indications</p>
               ) : (
@@ -269,6 +288,22 @@ export function ConnectionInfoDialog({ open, onOpenChange, connectionId, connect
                 <div className="p-3 border rounded">
                   <div className="font-medium mb-1">Strategies in Scope</div>
                   <div className="text-2xl font-bold">{info?.strategies?.length || 0}</div>
+                </div>
+                <div className="p-3 border rounded">
+                  <div className="font-medium mb-1">Real Avg Profit Factor</div>
+                  <div className="text-2xl font-bold">{(strategyDetails?.averages?.realProfitFactor || 0).toFixed(2)}</div>
+                </div>
+                <div className="p-3 border rounded">
+                  <div className="font-medium mb-1">Real Avg Drawdown Time</div>
+                  <div className="text-2xl font-bold">{(strategyDetails?.averages?.realDrawdownHours || 0).toFixed(1)}h</div>
+                </div>
+                <div className="p-3 border rounded">
+                  <div className="font-medium mb-1">Real Avg Pos Eval</div>
+                  <div className="text-2xl font-bold">{(strategyDetails?.averages?.realPositionEvaluation || 0).toFixed(1)}</div>
+                </div>
+                <div className="p-3 border rounded">
+                  <div className="font-medium mb-1">Strategy Valid Ratio</div>
+                  <div className="text-2xl font-bold">{((strategyDetails?.ratios?.valid || 0) * 100).toFixed(1)}%</div>
                 </div>
               </div>
             </div>
