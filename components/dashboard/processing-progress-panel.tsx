@@ -56,7 +56,7 @@ export function ProcessingProgressPanel({ connectionId }: ProcessingProgressPane
   const [validation, setValidation] = useState<{ valid: boolean; issues: string[] } | null>(null)
 
   useEffect(() => {
-    if (!connectionId || connectionId === 'demo-mode') {
+    if (!connectionId) {
       setLoading(false)
       return
     }

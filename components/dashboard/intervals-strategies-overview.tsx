@@ -33,6 +33,43 @@ interface StrategyStats {
   successRate: number
 }
 
+interface SystemStatsResponse {
+  validation?: {
+    valid: boolean
+    issues: string[]
+  }
+  overview?: {
+    processing?: {
+      phases?: {
+        historic?: {
+          isLoaded?: boolean
+          isProcessing?: boolean
+          lastUpdatedAt?: string
+        }
+        realtime?: {
+          isActive?: boolean
+          isStale?: boolean
+          lastUpdatedAt?: string
+        }
+      }
+      progression?: {
+        phase?: string
+      }
+      indications?: Record<string, number>
+      strategies?: Record<string, number>
+    }
+  }
+  activeConnections?: {
+    total?: number
+    active?: number
+    liveTrade?: number
+  }
+  tradeEngines?: {
+    mainEnabled?: boolean
+    liveTradeEnabled?: boolean
+  }
+}
+
 export function IntervalsStrategiesOverview({ connections }: { connections: any[] }) {
   const [intervals, setIntervals] = useState<IntervalsData>({})
   const [strategies, setStrategies] = useState<StrategyStats[]>([])
@@ -47,54 +84,90 @@ export function IntervalsStrategiesOverview({ connections }: { connections: any[
 
   const loadData = async () => {
     try {
-      const connectionId = connections[0]?.id || connections[0]?.connection_id || "default"
-      
-      const [intervalsRes, strategiesRes] = await Promise.all([
-        fetch(`/api/monitoring/intervals/${connectionId}`).catch(() => null),
-        fetch(`/api/monitoring/strategies/${connectionId}`).catch(() => null),
-      ])
-
-      if (intervalsRes?.ok) {
-        const data = await intervalsRes.json()
-        setIntervals(data.intervals || {})
-      } else {
-        // Fallback: derive interval health from system monitoring
-        const sysRes = await fetch("/api/system/monitoring").catch(() => null)
-        if (sysRes?.ok) {
-          const sysData = await sysRes.json()
-          const engineRunning = sysData.services?.tradeEngine || false
-          const indicationsRunning = sysData.services?.indicationsEngine || false
-          setIntervals({
-            direction: { enabled: indicationsRunning, isRunning: indicationsRunning, isProgressing: engineRunning, intervalTime: 1, timeout: 5 },
-            move: { enabled: indicationsRunning, isRunning: indicationsRunning, isProgressing: engineRunning, intervalTime: 1, timeout: 5 },
-            active: { enabled: indicationsRunning, isRunning: indicationsRunning, isProgressing: engineRunning, intervalTime: 1, timeout: 5 },
-            optimal: { enabled: indicationsRunning, isRunning: indicationsRunning, isProgressing: engineRunning, intervalTime: 2, timeout: 10 },
-          })
-        }
+      const statsRes = await fetch("/api/main/system-stats-v3", { cache: "no-store" }).catch(() => null)
+      if (!statsRes?.ok) {
+        throw new Error("Failed to fetch intervals and strategies overview")
       }
 
-      if (strategiesRes?.ok) {
-        const data = await strategiesRes.json()
-        setStrategies(data.strategies || [])
-      } else {
-        // Fallback: derive strategies from system stats
-        const statsRes = await fetch("/api/main/system-stats-v3").catch(() => null)
-        if (statsRes?.ok) {
-          const statsData = await statsRes.json()
-          setValidation(statsData?.validation || null)
-          if (statsData?.validation && !statsData.validation.valid) {
-            setStrategies([])
-            return
-          }
-          const normalized = normalizeProgressionStatus(statsData?.overview?.processing?.progression?.phase)
-          const fallbackStrategies: StrategyStats[] = [
-            { type: "base", enabled: true, rangeCount: 0, activePositions: statsData.activeConnections?.total || 0, totalIndications: statsData?.overview?.processing?.indications?.direction || 0, successRate: normalized.isInterrupted ? 0 : 100 },
-            { type: "main", enabled: statsData.tradeEngines?.mainEnabled || false, rangeCount: 0, activePositions: statsData.activeConnections?.active || 0, totalIndications: statsData?.overview?.processing?.indications?.move || 0, successRate: normalized.isRecovering ? 50 : 100 },
-            { type: "real", enabled: statsData.tradeEngines?.liveTradeEnabled || false, rangeCount: 0, activePositions: statsData.activeConnections?.liveTrade || 0, totalIndications: statsData?.overview?.processing?.indications?.active || 0, successRate: normalized.isInterrupted ? 0 : 100 },
-          ]
-          setStrategies(fallbackStrategies)
-        }
+      const statsData = await statsRes.json() as SystemStatsResponse
+      setValidation(statsData?.validation || null)
+      if (statsData?.validation && !statsData.validation.valid) {
+        setIntervals({})
+        setStrategies([])
+        return
       }
+
+      const processing = statsData?.overview?.processing
+      const normalized = normalizeProgressionStatus(processing?.progression?.phase)
+      const historicalLoaded = Boolean(processing?.phases?.historic?.isLoaded)
+      const historicalProcessing = Boolean(processing?.phases?.historic?.isProcessing)
+      const realtimeActive = Boolean(processing?.phases?.realtime?.isActive)
+      const realtimeStale = Boolean(processing?.phases?.realtime?.isStale)
+      const indicationCounts = processing?.indications || {}
+      const strategyCounts = processing?.strategies || {}
+
+      setIntervals({
+        direction: {
+          enabled: (indicationCounts.direction || 0) > 0 || historicalLoaded || historicalProcessing || realtimeActive,
+          isRunning: historicalLoaded || historicalProcessing,
+          isProgressing: historicalProcessing,
+          intervalTime: 1,
+          timeout: 5,
+          lastEnd: processing?.phases?.historic?.lastUpdatedAt,
+        },
+        move: {
+          enabled: (indicationCounts.move || 0) > 0 || realtimeActive || realtimeStale,
+          isRunning: realtimeActive,
+          isProgressing: realtimeActive && !realtimeStale,
+          intervalTime: 1,
+          timeout: 5,
+          lastEnd: processing?.phases?.realtime?.lastUpdatedAt,
+        },
+        active: {
+          enabled: (indicationCounts.active || 0) > 0 || realtimeActive,
+          isRunning: realtimeActive,
+          isProgressing: realtimeActive && !normalized.isInterrupted,
+          intervalTime: 1,
+          timeout: 5,
+          lastEnd: processing?.phases?.realtime?.lastUpdatedAt,
+        },
+        optimal: {
+          enabled: (indicationCounts.optimal || 0) > 0 || (strategyCounts.real || 0) > 0,
+          isRunning: realtimeActive,
+          isProgressing: normalized.isRecovering || (!normalized.isInterrupted && realtimeActive),
+          intervalTime: 2,
+          timeout: 10,
+          lastEnd: processing?.phases?.realtime?.lastUpdatedAt,
+        },
+      })
+
+      const fallbackStrategies: StrategyStats[] = [
+        {
+          type: "base",
+          enabled: true,
+          rangeCount: strategyCounts.base || 0,
+          activePositions: statsData.activeConnections?.total || 0,
+          totalIndications: indicationCounts.direction || 0,
+          successRate: normalized.isInterrupted ? 0 : 100,
+        },
+        {
+          type: "main",
+          enabled: statsData.tradeEngines?.mainEnabled || false,
+          rangeCount: strategyCounts.main || 0,
+          activePositions: statsData.activeConnections?.active || 0,
+          totalIndications: indicationCounts.move || 0,
+          successRate: normalized.isRecovering ? 50 : normalized.isInterrupted ? 0 : 100,
+        },
+        {
+          type: "real",
+          enabled: statsData.tradeEngines?.liveTradeEnabled || false,
+          rangeCount: strategyCounts.real || 0,
+          activePositions: statsData.activeConnections?.liveTrade || 0,
+          totalIndications: indicationCounts.active || 0,
+          successRate: normalized.isInterrupted ? 0 : 100,
+        },
+      ]
+      setStrategies(fallbackStrategies)
     } catch (error) {
       console.error("[IntervalsStrategies] Failed to load data:", error)
     } finally {

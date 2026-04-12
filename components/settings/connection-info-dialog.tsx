@@ -15,6 +15,11 @@ interface ConnectionInfoDialogProps {
   connectionName: string
 }
 
+function toNumber(value: unknown, fallback = 0) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
 export function ConnectionInfoDialog({ open, onOpenChange, connectionId, connectionName }: ConnectionInfoDialogProps) {
   const [loading, setLoading] = useState(true)
   const [info, setInfo] = useState<any>(null)
@@ -41,7 +46,7 @@ export function ConnectionInfoDialog({ open, onOpenChange, connectionId, connect
       ])
       const observabilityRes = await fetch(`/api/trade-engine/status?connectionId=${connectionId}`)
 
-      const indications = indicationsRes.ok ? await indicationsRes.json() : { indications: [] }
+      const indications = indicationsRes.ok ? await indicationsRes.json() : {}
       const settings = settingsRes.ok ? await settingsRes.json() : {}
       const presetType = presetTypeRes.ok ? await presetTypeRes.json() : { presetType: null }
       const progression = progressionRes.ok ? await progressionRes.json() : { progressionState: null }
@@ -49,8 +54,22 @@ export function ConnectionInfoDialog({ open, onOpenChange, connectionId, connect
       const positions = positionsRes.ok ? await positionsRes.json() : { positions: [] }
       const observability = observabilityRes.ok ? await observabilityRes.json() : { connection: null }
 
+      const indicationsList = Array.isArray(indications)
+        ? indications
+        : Array.isArray(indications.indications)
+          ? indications.indications
+          : Array.isArray(indications.data)
+            ? indications.data
+            : Object.entries(indications)
+                .filter(([, enabled]) => typeof enabled === "boolean")
+                .map(([type, enabled]) => ({
+                  indication_type: type,
+                  indication_name: `${type[0].toUpperCase()}${type.slice(1)} indication`,
+                  is_enabled: enabled,
+                }))
+
       setInfo({
-        indications: indications.indications || [],
+        indications: indicationsList,
         settings: settings,
         presetType: presetType.presetType,
         progression: progression.progressionState || null,
@@ -122,11 +141,11 @@ export function ConnectionInfoDialog({ open, onOpenChange, connectionId, connect
                   </div>
                   <div className="p-3 border rounded">
                     <div className="font-medium mb-1">Tracked Indications</div>
-                    <div className="text-2xl font-bold">{info.progression.indicationsCount || 0}</div>
+                    <div className="text-2xl font-bold">{Math.max(info.progression.indicationsCount || 0, info.observability?.counts?.indications || 0)}</div>
                   </div>
                   <div className="p-3 border rounded">
                     <div className="font-medium mb-1">Tracked Strategies</div>
-                    <div className="text-2xl font-bold">{info.progression.strategiesCount || 0}</div>
+                    <div className="text-2xl font-bold">{Math.max(info.progression.strategiesCount || 0, info.observability?.counts?.strategies || 0)}</div>
                   </div>
                 </div>
               </div>
@@ -229,19 +248,19 @@ export function ConnectionInfoDialog({ open, onOpenChange, connectionId, connect
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div className="p-3 border rounded">
                   <div className="font-medium mb-1">Base Volume Factor</div>
-                  <div className="text-2xl font-bold">{info?.settings?.baseVolumeFactor || 1.0}</div>
+                  <div className="text-2xl font-bold">{toNumber(info?.settings?.settings?.baseVolumeFactor ?? info?.settings?.baseVolumeFactor, 1).toFixed(2)}</div>
                 </div>
                 <div className="p-3 border rounded">
                   <div className="font-medium mb-1">Range Percentage</div>
-                  <div className="text-2xl font-bold">{info?.settings?.volumeRangePercentage || 20}%</div>
+                  <div className="text-2xl font-bold">{toNumber(info?.settings?.settings?.volumeRangePercentage ?? info?.settings?.volumeRangePercentage, 20)}%</div>
                 </div>
                 <div className="p-3 border rounded">
                   <div className="font-medium mb-1">Target Positions</div>
-                  <div className="text-2xl font-bold">{info?.settings?.targetPositions || 50}</div>
+                  <div className="text-2xl font-bold">{toNumber(info?.settings?.settings?.targetPositions ?? info?.settings?.targetPositions, 50)}</div>
                 </div>
                 <div className="p-3 border rounded">
                   <div className="font-medium mb-1">Live Trade Factor</div>
-                  <div className="text-2xl font-bold">{info?.settings?.baseVolumeFactorLive || 1.0}</div>
+                  <div className="text-2xl font-bold">{toNumber(info?.settings?.settings?.baseVolumeFactorLive ?? info?.settings?.baseVolumeFactorLive, 1).toFixed(2)}</div>
                 </div>
                 <div className="p-3 border rounded">
                   <div className="font-medium mb-1">Open Positions</div>

@@ -31,6 +31,37 @@ export type StrategyStatsByType = Record<
   }
 >
 
+export type PerformanceMetricsSnapshot = {
+  last250Positions: {
+    total: number
+    winning: number
+    losing: number
+    winRate: number
+    profitFactor: number
+    totalProfit: number
+  }
+  last50Positions: {
+    total: number
+    winning: number
+    losing: number
+    winRate: number
+    profitFactor: number
+    totalProfit: number
+  }
+  last32Hours: {
+    totalPositions: number
+    totalProfit: number
+    profitFactor: number
+  }
+}
+
+export type SymbolStatsSnapshot = {
+  symbol: string
+  livePositions: number
+  profitFactor250: number
+  profitFactor50: number
+}
+
 function parseNumber(value: unknown, fallback = 0): number {
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : fallback
@@ -65,9 +96,59 @@ function latestTimestamp(current: string | null, candidate: unknown): string | n
   return new Date(next).getTime() > new Date(current).getTime() ? next : current
 }
 
+function extractProfit(entry: any): number {
+  return parseNumber(
+    entry?.profit_loss ??
+      entry?.profitLoss ??
+      entry?.realized_pnl ??
+      entry?.realizedPnl ??
+      entry?.pnl ??
+      entry?.net_profit ??
+      entry?.netProfit,
+  )
+}
+
+function extractWinRate(count: number, winning: number): number {
+  if (count <= 0) return 0
+  return winning / count
+}
+
+function extractProfitFactorFromProfits(profits: number[]): number {
+  let grossProfit = 0
+  let grossLoss = 0
+
+  for (const profit of profits) {
+    if (profit > 0) grossProfit += profit
+    if (profit < 0) grossLoss += Math.abs(profit)
+  }
+
+  if (grossProfit <= 0 && grossLoss <= 0) return 0
+  if (grossLoss <= 0) return grossProfit > 0 ? grossProfit : 0
+  return grossProfit / grossLoss
+}
+
+function buildPerformanceWindow(entries: any[]) {
+  const profits = entries.map(extractProfit)
+  const total = entries.length
+  const winning = profits.filter((profit) => profit > 0).length
+  const losing = profits.filter((profit) => profit < 0).length
+  const totalProfit = profits.reduce((sum, profit) => sum + profit, 0)
+
+  return {
+    total,
+    winning,
+    losing,
+    winRate: extractWinRate(total, winning),
+    profitFactor: extractProfitFactorFromProfits(profits),
+    totalProfit,
+  }
+}
+
 export async function getConnectionTrackingSnapshot(connectionId: string): Promise<{
   progression: ProgressionState
   counts: TrackingCounts
+  positions: any[]
+  trades: any[]
   indications: any[]
   strategies: any[]
 }> {
@@ -106,6 +187,8 @@ export async function getConnectionTrackingSnapshot(connectionId: string): Promi
       indications: Math.max(indications.length, progressionIndications),
       strategies: Math.max(strategies.length, progressionStrategies),
     },
+    positions,
+    trades,
     indications,
     strategies,
   }
@@ -211,6 +294,75 @@ export async function buildStrategyStats(): Promise<StrategyStatsByType> {
   }
 
   return base
+}
+
+export async function buildPerformanceMetrics(): Promise<PerformanceMetricsSnapshot> {
+  const system = await getSystemTrackingSnapshot()
+  const flattenedTrades = system.snapshots.flatMap(({ snapshot }) => snapshot.trades || [])
+  const sortedTrades = [...flattenedTrades].sort((a, b) => {
+    const aTime = new Date(String(a?.closed_at || a?.updated_at || a?.created_at || 0)).getTime()
+    const bTime = new Date(String(b?.closed_at || b?.updated_at || b?.created_at || 0)).getTime()
+    return bTime - aTime
+  })
+
+  const last250 = sortedTrades.slice(0, 250)
+  const last50 = sortedTrades.slice(0, 50)
+  const thirtyTwoHoursAgo = Date.now() - 32 * 60 * 60 * 1000
+  const last32HoursEntries = sortedTrades.filter((entry) => {
+    const ts = new Date(String(entry?.closed_at || entry?.updated_at || entry?.created_at || 0)).getTime()
+    return Number.isFinite(ts) && ts >= thirtyTwoHoursAgo
+  })
+  const last32HoursWindow = buildPerformanceWindow(last32HoursEntries)
+
+  return {
+    last250Positions: buildPerformanceWindow(last250),
+    last50Positions: buildPerformanceWindow(last50),
+    last32Hours: {
+      totalPositions: last32HoursWindow.total,
+      totalProfit: last32HoursWindow.totalProfit,
+      profitFactor: last32HoursWindow.profitFactor,
+    },
+  }
+}
+
+export async function buildSymbolStats(limit = 22): Promise<SymbolStatsSnapshot[]> {
+  const system = await getSystemTrackingSnapshot()
+  const symbolMap = new Map<string, { profits: number[]; livePositions: number }>()
+
+  for (const { snapshot } of system.snapshots) {
+    for (const position of snapshot.positions || []) {
+      const symbol = String(position?.symbol || "").trim()
+      if (!symbol) continue
+      const current = symbolMap.get(symbol) || { profits: [], livePositions: 0 }
+      current.livePositions += 1
+      symbolMap.set(symbol, current)
+    }
+
+    for (const trade of snapshot.trades || []) {
+      const symbol = String(trade?.symbol || trade?.pair || "").trim()
+      if (!symbol) continue
+      const current = symbolMap.get(symbol) || { profits: [], livePositions: 0 }
+      current.profits.push(extractProfit(trade))
+      symbolMap.set(symbol, current)
+    }
+  }
+
+  return [...symbolMap.entries()]
+    .map(([symbol, stats]) => {
+      const recent250 = stats.profits.slice(-250)
+      const recent50 = stats.profits.slice(-50)
+      return {
+        symbol,
+        livePositions: stats.livePositions,
+        profitFactor250: extractProfitFactorFromProfits(recent250),
+        profitFactor50: extractProfitFactorFromProfits(recent50),
+      }
+    })
+    .sort((a, b) => {
+      if (b.livePositions !== a.livePositions) return b.livePositions - a.livePositions
+      return b.profitFactor250 - a.profitFactor250
+    })
+    .slice(0, limit)
 }
 
 export async function getRedisPatternCounts(patterns: string[]): Promise<number> {

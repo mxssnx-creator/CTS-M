@@ -64,7 +64,7 @@ class ComprehensiveTestRunner {
   private devProcess: ChildProcess | null = null
   private results: TestResult[] = []
   private startTime: Date = new Date()
-  private baseUrl = 'http://localhost:3001'
+  private baseUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3001'
 
   constructor() {
     console.log('\n🚀 CTS v3.1 Comprehensive Dev Mode Test Suite\n')

@@ -10,7 +10,7 @@ import {
   isConnectionWorking,
   isTruthyFlag,
 } from "@/lib/connection-state-utils"
-import { buildIndicationStats, buildStrategyStats, getSystemTrackingSnapshot } from "@/lib/dashboard-tracking"
+import { buildIndicationStats, buildPerformanceMetrics, buildStrategyStats, buildSymbolStats, getSystemTrackingSnapshot } from "@/lib/dashboard-tracking"
 import { getConnectionObservability } from "@/lib/connection-observability"
 import { validateMainpageOverview } from "@/lib/mainpage-validation"
 
@@ -121,36 +121,20 @@ export async function GET() {
 
     const workflow = await getDashboardWorkflowSnapshot()
     const tracking = await getSystemTrackingSnapshot()
-    const [strategyStats, indicationStats] = await Promise.all([
+    const [strategyStats, indicationStats, performanceStats, symbolStats] = await Promise.all([
       buildStrategyStats(),
       buildIndicationStats(),
+      buildPerformanceMetrics(),
+      buildSymbolStats(),
     ])
     const primaryConnectionId = activeInsertedAll[0]?.id || enabledDashboard[0]?.id || null
     const primaryObservability = primaryConnectionId ? await getConnectionObservability(primaryConnectionId) : null
 
     const overview = {
       performance: {
-        last250Positions: {
-          total: workflow.connectionMetrics.trades,
-          winning: 0,
-          losing: 0,
-          winRate: 0,
-          profitFactor: 0,
-          totalProfit: workflow.connectionMetrics.totalProfit || 0,
-        },
-        last50Positions: {
-          total: Math.min(workflow.connectionMetrics.trades, 50),
-          winning: 0,
-          losing: 0,
-          winRate: 0,
-          profitFactor: 0,
-          totalProfit: workflow.connectionMetrics.totalProfit || 0,
-        },
-        last32Hours: {
-          totalPositions: workflow.connectionMetrics.positions,
-          totalProfit: workflow.connectionMetrics.totalProfit || 0,
-          profitFactor: 0,
-        },
+        last250Positions: performanceStats.last250Positions,
+        last50Positions: performanceStats.last50Positions,
+        last32Hours: performanceStats.last32Hours,
       },
       strategies: ["base", "main", "real", "live"].map((type) => ({
         type,
@@ -168,15 +152,7 @@ export async function GET() {
         lastTrigger: (indicationStats as any)?.[type]?.lastTrigger || null,
         profitFactor: Number((indicationStats as any)?.[type]?.profitFactor || 0),
       })),
-      symbols: tracking.snapshots
-        .flatMap(({ snapshot }) => snapshot.strategies.map((strategy: any) => String(strategy?.symbol || "")).filter(Boolean))
-        .slice(0, 22)
-        .map((symbol) => ({
-          symbol,
-          livePositions: 0,
-          profitFactor250: 0,
-          profitFactor50: 0,
-        })),
+      symbols: symbolStats,
       processing: primaryObservability ? {
         connectionId: primaryConnectionId,
         progression: primaryObservability.progression,
